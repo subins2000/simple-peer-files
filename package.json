@@ -1,0 +1,34 @@
+{
+  "name": "simple-peer-file",
+  "version": "1.0.0",
+  "description": "Library to transfer files over simple-peer",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "author": "Subin Siby <mail@subinsb.com>",
+  "license": "LGPL-3.0",
+  "scripts": {
+    "test": "standardx src/**/*.ts --fix"
+  },
+  "dependencies": {
+    "ee-ts": "^1.0.2",
+    "filereader-stream": "^2.0.0",
+    "simple-peer": "^9.7.2",
+    "through": "^2.3.8",
+    "typescript": "^3.9.7"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^3.8.0",
+    "@typescript-eslint/parser": "^3.8.0",
+    "standardx": "^5.0.0"
+  },
+  "eslintConfig": {
+    "rules": {
+      "no-unused-vars": "off",
+      "@typescript-eslint/no-unused-vars": "error"
+    }
+  },
+  "standardx": {
+    "parser": "@typescript-eslint/parser",
+    "plugins": [ "@typescript-eslint/eslint-plugin" ]
+  }
+}
