@@ -9,3 +9,4 @@ Thanks to [Andre Bastin](https://github.com/AndrewBastin/justshare-client/tree/m
 * Pause/Resume file transfers
 * No file size limit
 * Independent, just pass a `simple-peer` object
+* Multiple file transfers at the same time using same `simple-peer` object
