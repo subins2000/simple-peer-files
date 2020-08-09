@@ -2,16 +2,18 @@ import * as Peer from 'simple-peer'
 import PeerFileSend from './PeerFileSend'
 import PeerFileReceive from './PeerFileReceive'
 import { sign } from 'crypto'
-
-interface PeerInfo {
-  controlChannel: Peer
-  fileChannels: Peer[] // channels for file transfer
-}
+import { start } from 'repl'
 
 export default class PeerFile {
+  private arrivals: {
+    [fileID: string]: PeerFileReceive
+  } = {}
+
   send (peer: Peer, fileID: string, file: File) {
     return new Promise(resolve => {
       const controlChannel = peer
+
+      let startingChunk = 0
 
       let fileChannel = new Peer({
         initiator: true
@@ -31,13 +33,17 @@ export default class PeerFile {
           const dataJSON = JSON.parse(data)
 
           if (dataJSON.signal && dataJSON.fileID && dataJSON.fileID === fileID) {
+            if (dataJSON.start) {
+              startingChunk = dataJSON.start
+            }
+
             fileChannel.signal(dataJSON.signal)
           }
         } catch (e) {}
       }
 
       fileChannel.on('connect', () => {
-        const pfs = new PeerFileSend(fileChannel, file)
+        const pfs = new PeerFileSend(fileChannel, file, startingChunk)
 
         pfs.on('done', () => {
           controlChannel.off('data', controlDataHandler)
@@ -65,8 +71,17 @@ export default class PeerFile {
       })
 
       fileChannel.on('signal', (signal: Peer.SignalData) => {
+        // chunk to start sending from
+        let start = 0
+
+        // File resume capability
+        if (fileID in this.arrivals) {
+          start = this.arrivals[fileID].receivedChunkCount + 1
+        }
+
         controlChannel.send(JSON.stringify({
           fileID,
+          start,
           signal
         }))
       })
@@ -84,10 +99,18 @@ export default class PeerFile {
       }
 
       fileChannel.on('connect', () => {
-        const pfs = new PeerFileReceive(fileChannel, {
-          filename,
-          filesizeBytes: filesize
-        })
+        let pfs: PeerFileReceive
+
+        if (fileID in this.arrivals) {
+          pfs = this.arrivals[fileID]
+          pfs.setPeer(fileChannel)
+        } else {
+          pfs = new PeerFileReceive(fileChannel, {
+            filename,
+            filesizeBytes: filesize
+          })
+          this.arrivals[fileID] = pfs
+        }
 
         pfs.on('done', () => {
           controlChannel.off('data', controlDataHandler)
