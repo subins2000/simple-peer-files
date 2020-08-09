@@ -9,107 +9,96 @@ interface PeerInfo {
 }
 
 export default class PeerFile {
-  // active channels
-  private peers: {
-    [sessionID: string]: PeerInfo
-  } = {}
-
-  send (peer: Peer, file: File) {
+  send (peer: Peer, fileID: string, file: File) {
     return new Promise(resolve => {
-      // A Peer object has one data channel
-      if (peer.id in this.peers) {
-        
-      } else {
-        const controlChannel = peer
-        const sessionID = controlChannel.id // aka peer ID
+      const controlChannel = peer
 
-        this.peers[sessionID] = {
-          controlChannel,
-          fileChannels: [] as Peer,
-        }
+      let fileChannel = new Peer({
+        initiator: true
+      })
 
-        let fileChannel = new Peer({
-          initiator: true
-        })
+      fileChannel.on('signal', (signal: Peer.SignalData) => {
+        controlChannel.send(JSON.stringify({
+          fileID,
+          filename: file.name,
+          filesize: file.size,
+          signal
+        }))
+      })
 
-        fileChannel.on('signal', (signal: Peer.SignalData) => {
-          controlChannel.send(JSON.stringify({
-            filename: file.name,
-            filesize: file.size,
-            signal
-          }))
-        })
+      let controlDataHandler = (data: string) => {
+        try {
+          const dataJSON = JSON.parse(data)
 
-        fileChannel.on('connect', () => {
-          this.peers[sessionID].fileChannels.push(fileChannel)
-
-          const pfs = new PeerFileSend(fileChannel, file)
-
-          resolve(pfs)
-        })
-
-        controlChannel.on('data', (data: string) => {
-          try {
-            const dataJSON = JSON.parse(data)
-
-            if ('signal' in dataJSON) {
-              fileChannel.signal(dataJSON.signal)
-            }
-          } catch (e) {}
-        })
+          if (dataJSON.signal && dataJSON.fileID && dataJSON.fileID === fileID) {
+            fileChannel.signal(dataJSON.signal)
+          }
+        } catch (e) {}
       }
+
+      fileChannel.on('connect', () => {
+        const pfs = new PeerFileSend(fileChannel, file)
+
+        pfs.on('done', () => {
+          controlChannel.off('data', controlDataHandler)
+          fileChannel.destroy()
+          controlDataHandler = null // garbage collect
+        })
+
+        resolve(pfs)
+      })
+
+      controlChannel.on('data', controlDataHandler)
     })
   }
 
-  receive (peer: Peer) {
+  receive (peer: Peer, fileID: string) {
     return new Promise(resolve => {
-      if (peer.id in this.peers) {
+      const controlChannel = peer
 
-      } else {
-        const controlChannel = peer
-        const sessionID = controlChannel.id
+      let filename: string
+      let filesize: number
 
-        let filename: string
-        let filesize: number
-  
-        this.peers[sessionID] = {
-          controlChannel,
-          fileChannels: [] as Peer,
-        }
-  
-        let fileChannel = new Peer({
-          initiator: false
-        })
-  
-        fileChannel.on('signal', (signal: Peer.SignalData) => {
-          controlChannel.send(JSON.stringify({
-            signal
-          }))
-        })
-  
-        fileChannel.on('connect', () => {
-          this.peers[sessionID].fileChannels.push(fileChannel)
+      let fileChannel = new Peer({
+        initiator: false,
+        trickle: false
+      })
 
-          const pfs = new PeerFileReceive(fileChannel, {
-            filename,
-            filesizeBytes: filesize
-          })
+      fileChannel.on('signal', (signal: Peer.SignalData) => {
+        controlChannel.send(JSON.stringify({
+          fileID,
+          signal
+        }))
+      })
 
-          resolve(pfs)
-        })
-  
-        controlChannel.on('data', (data: string) => {
-          try {
-            const dataJSON = JSON.parse(data)
-  
-            if (dataJSON.signal) {
-              filename = dataJSON.filename,
-              filesize = dataJSON.filesize
-              fileChannel.signal(dataJSON.signal)
-            }
-          } catch (e) {}
-        })
+      let controlDataHandler = (data: string) => {
+        try {
+          const dataJSON = JSON.parse(data)
+
+          if (dataJSON.signal && dataJSON.fileID && dataJSON.fileID === fileID) {
+            filename = dataJSON.filename,
+            filesize = dataJSON.filesize
+            fileChannel.signal(dataJSON.signal)
+          }
+        } catch (e) {}
       }
+
+      fileChannel.on('connect', () => {
+        const pfs = new PeerFileReceive(fileChannel, {
+          filename,
+          filesizeBytes: filesize
+        })
+
+        pfs.on('done', () => {
+          controlChannel.off('data', controlDataHandler)
+          fileChannel.destroy()
+          controlDataHandler = null // garbage collect
+        })
+
+        resolve(pfs)
+      })
+
+      controlChannel.on('data', controlDataHandler)
     })
   }
 }
