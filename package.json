@@ -1,14 +1,14 @@
 {
-  "name": "simple-peer-file",
+  "name": "simple-peer-files",
   "version": "1.0.0",
-  "description": "Library to transfer files over simple-peer",
+  "description": "Library to transfer files over WebRTC (simple-peer)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "Subin Siby <mail@subinsb.com>",
   "license": "LGPL-3.0",
   "scripts": {
     "dev": "tsc -w",
-    "test": "standardx src/**/*.ts"
+    "test": "standardx src/**/*.ts --fix"
   },
   "dependencies": {
     "filereader-stream": "^2.0.0",

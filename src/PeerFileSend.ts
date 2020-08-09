@@ -3,7 +3,6 @@ import SimplePeer from 'simple-peer'
 import { through } from 'through'
 
 import ControlHeaders from './ControlHeaders'
-import FileSendRequest from './FileSendRequest'
 import FileStartMetadata from './FileStartMetadata'
 
 import * as read from 'filereader-stream'
@@ -34,7 +33,7 @@ interface Events {
 export default class PeerFileSend extends EventEmitter<Events> {
   private peer: SimplePeer.Instance;
   private file: File;
-  
+
   private chunkSize = Math.pow(2, 13);
   private totalChunks: number;
   private chunksSent: number = 0;

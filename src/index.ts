@@ -13,7 +13,7 @@ export default class PeerFile {
 
       let startingChunk = 0
 
-      let fileChannel = new Peer({
+      const fileChannel = new Peer({
         initiator: true
       })
 
@@ -63,7 +63,7 @@ export default class PeerFile {
       let filename: string
       let filesize: number
 
-      let fileChannel = new Peer({
+      const fileChannel = new Peer({
         initiator: false,
         trickle: false
       })
@@ -89,7 +89,7 @@ export default class PeerFile {
           const dataJSON = JSON.parse(data)
 
           if (dataJSON.signal && dataJSON.fileID && dataJSON.fileID === fileID) {
-            filename = dataJSON.filename,
+            filename = dataJSON.filename
             filesize = dataJSON.filesize
             fileChannel.signal(dataJSON.signal)
           }
