@@ -5,7 +5,7 @@
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "Subin Siby <mail@subinsb.com>",
-  "license": "LGPL-3.0",
+  "license": "MIT",
   "scripts": {
     "dev": "tsc -w",
     "test": "standardx src/**/*.ts --fix"
