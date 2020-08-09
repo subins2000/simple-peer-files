@@ -6,7 +6,7 @@ import FileStartMetadata from './FileStartMetadata'
 
 interface Events {
   progress(bytesCompleted: number): void,
-  done(receivedFile: File): void
+  done(receivedFile: Blob): void
 
   // Called when the receiver (this) calls cancel
   cancel(): void
@@ -26,7 +26,8 @@ export default class PeerFileReceive extends EventEmitter<Events> {
 
   private fileType!: string;
   private chunkSizeBytes!: number;
-  private receivedChunkCount!: number;
+
+  public receivedChunkCount!: number;
   private chunkCount!: number;
 
   constructor (peer: SimplePeer.Instance, req: FileSendRequest) {
@@ -57,13 +58,9 @@ export default class PeerFileReceive extends EventEmitter<Events> {
 
       this.emit('progress', Math.min(this.chunkSizeBytes * this.receivedChunkCount, this.req.filesizeBytes))
     } else if (data[0] === PeerFileSend.HEADER_FILE_END) {
-      this.emit('done', new window.File(
-        this.receivedData,
-        this.req.filename,
-        {
-          type: this.fileType
-        }
-      ))
+      const file = new Blob(this.receivedData, { type: this.fileType })
+      console.log(file.size)
+      this.emit('done', file)
 
       // Disconnect from the peer and cleanup
       this.peer.off('data', this.handleData)
@@ -95,5 +92,9 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     this.peer.destroy()
 
     this.emit('cancel')
+  }
+
+  setPeer (peer: SimplePeer.Instance) {
+    this.peer = peer
   }
 }

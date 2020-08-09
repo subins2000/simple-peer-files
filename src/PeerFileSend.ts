@@ -9,7 +9,6 @@ import PeerFileReceive from './PeerFileReceive'
 import * as read from 'filereader-stream'
 
 interface Events {
-
   progress(bytesSent: number): void,
   done(): void
   // Called when the sender (this) has requested a cancel
@@ -31,15 +30,18 @@ export default class PeerFileSend extends EventEmitter<Events> {
   private file: File;
   private chunkSize = Math.pow(2, 13);
   private totalChunks: number;
+  private startingChunk: number;
   private req: FileSendRequest;
   private cancelled: boolean = false;
 
-  constructor (peer: SimplePeer.Instance, file: File) {
+  constructor (peer: SimplePeer.Instance, file: File, startingChunk: number = 0) {
     super()
 
     this.peer = peer
     this.file = file
     this.totalChunks = Math.ceil(this.file.size / this.chunkSize)
+
+    this.startingChunk = startingChunk
   }
 
   // Structure of File Start Data
@@ -72,7 +74,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
   // Rest of the bytes will be the chunk data with length the length specified in the chunk size
   private prepareChunkData (chunk: Uint8Array): Uint8Array {
     // + 1 for the header
-    const resp = new Uint8Array(this.chunkSize + 1)
+    const resp = new Uint8Array(chunk.length + 1)
 
     resp[0] = PeerFileSend.HEADER_FILE_CHUNK
     resp.set(chunk, 1)
@@ -111,18 +113,29 @@ export default class PeerFileSend extends EventEmitter<Events> {
       }
     })
 
-    // Start
-    const startHeader = this.prepareFileStartData()
+    let offset = 0
+    let chunksSent = 0
 
-    this.peer.send(startHeader)
-    this.emit('progress', 0)
+    if (this.startingChunk > 0) {
+      // Resume
+      // starting chunk number is the next chunk needd
+      offset = (this.startingChunk - 1) * this.chunkSize
+
+      // so number of chunks already sent will be -1
+      chunksSent = this.startingChunk - 1
+    } else {
+      // Start
+      const startHeader = this.prepareFileStartData()
+
+      this.peer.send(startHeader)
+      this.emit('progress', 0)
+    }
 
     // Chunk sending
     const stream = read(this.file, {
-      chunkSize: this.chunkSize
+      chunkSize: this.chunkSize,
+      offset
     })
-
-    let chunksSent = 0
 
     stream.pipe(through(
       (chunk: any) => {
@@ -131,6 +144,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
           this.peer.send(this.prepareChunkData(chunk))
 
           chunksSent++
+
           this.emit('progress', Math.min(this.file.size, chunksSent * this.chunkSize))
         }
       },
