@@ -1,12 +1,13 @@
 import { EventEmitter } from 'ee-ts'
 import SimplePeer from 'simple-peer'
+
+import ControlHeaders from './ControlHeaders'
 import FileSendRequest from './FileSendRequest'
-import PeerFileSend from './PeerFileSend'
 import FileStartMetadata from './FileStartMetadata'
 
 interface Events {
   progress(bytesCompleted: number): void,
-  done(receivedFile: Blob): void
+  done(receivedFile: File): void
 
   // Called when the receiver (this) calls cancel
   cancel(): void
@@ -16,9 +17,6 @@ interface Events {
 }
 
 export default class PeerFileReceive extends EventEmitter<Events> {
-  // Special data headers sent by Receivers
-  static HEADER_REC_CANCEL = 20;
-
   private peer: SimplePeer.Instance;
   private req: FileSendRequest;
 
@@ -42,7 +40,7 @@ export default class PeerFileReceive extends EventEmitter<Events> {
   }
 
   private handleData (data: Uint8Array) {
-    if (data[0] === PeerFileSend.HEADER_FILE_START) {
+    if (data[0] === ControlHeaders.FILE_START) {
       const meta = JSON.parse(new TextDecoder().decode(data.slice(1))) as FileStartMetadata
 
       this.chunkCount = meta.totalChunks
@@ -51,21 +49,26 @@ export default class PeerFileReceive extends EventEmitter<Events> {
       this.fileType = meta.fileType
 
       this.emit('progress', 0)
-    } else if (data[0] === PeerFileSend.HEADER_FILE_CHUNK) {
+    } else if (data[0] === ControlHeaders.FILE_CHUNK) {
       this.receivedData.push(data.slice(1))
 
       this.receivedChunkCount++
 
       this.emit('progress', Math.min(this.chunkSizeBytes * this.receivedChunkCount, this.req.filesizeBytes))
-    } else if (data[0] === PeerFileSend.HEADER_FILE_END) {
-      const file = new Blob(this.receivedData, { type: this.fileType })
-      console.log(file.size)
+    } else if (data[0] === ControlHeaders.FILE_END) {
+      const file = new window.File(
+        this.receivedData,
+        this.req.filename,
+        {
+          type: this.fileType
+        }
+      )
       this.emit('done', file)
 
       // Disconnect from the peer and cleanup
       this.peer.off('data', this.handleData)
       this.peer.destroy()
-    } else if (data[0] === PeerFileSend.HEADER_SEND_CANCEL) {
+    } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
       this.peer.off('data', this.handleData)
       this.peer.destroy()
 
@@ -78,11 +81,11 @@ export default class PeerFileReceive extends EventEmitter<Events> {
   }
 
   // Structure for cancel data
-  // 1st byte -> Header for the sent data type (HEADER_REC_CANCEL)
+  // 1st byte -> Header for the sent data type (ControlHeaders.TRANSFER_CANCEL)
   private prepareCancelData (): Uint8Array {
     const resp = new Uint8Array(1)
 
-    resp[0] = PeerFileReceive.HEADER_REC_CANCEL
+    resp[0] = ControlHeaders.TRANSFER_CANCEL
     return resp
   }
 

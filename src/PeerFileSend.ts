@@ -2,9 +2,9 @@ import { EventEmitter } from 'ee-ts'
 import SimplePeer from 'simple-peer'
 import { through } from 'through'
 
+import ControlHeaders from './ControlHeaders'
 import FileSendRequest from './FileSendRequest'
 import FileStartMetadata from './FileStartMetadata'
-import PeerFileReceive from './PeerFileReceive'
 
 import * as read from 'filereader-stream'
 
@@ -19,13 +19,6 @@ interface Events {
 }
 
 export default class PeerFileSend extends EventEmitter<Events> {
-  // The first byte in every data sent will be what kind of data it is
-  static HEADER_FILE_START = 0;
-  static HEADER_FILE_CHUNK = 1;
-  static HEADER_FILE_END = 2;
-
-  static HEADER_SEND_CANCEL = 10;
-
   private peer: SimplePeer.Instance;
   private file: File;
   private chunkSize = Math.pow(2, 13);
@@ -45,7 +38,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
   }
 
   // Structure of File Start Data
-  // 1st byte -> Type of data sent (will be set to HEADER_FILE_START)
+  // 1st byte -> Type of data sent (will be set to ControlHeaders.FILE_START)
   // Rest of the data will be assigned to the uint8array merge of JSON string the file metadata
   // TODO : Much more compressed binary representation plz
   private prepareFileStartData (): Uint8Array {
@@ -63,41 +56,41 @@ export default class PeerFileSend extends EventEmitter<Events> {
     const resp = new Uint8Array(metaByteArray.length + 1)
 
     // Header byte
-    resp[0] = PeerFileSend.HEADER_FILE_START
+    resp[0] = ControlHeaders.FILE_START
     resp.set(metaByteArray, 1)
 
     return resp
   }
 
   // Structure for chunk data
-  // 1st byte -> Data type header (HEADER_FILE_CHUNK)
+  // 1st byte -> Data type header (ControlHeaders.FILE_CHUNK)
   // Rest of the bytes will be the chunk data with length the length specified in the chunk size
   private prepareChunkData (chunk: Uint8Array): Uint8Array {
     // + 1 for the header
     const resp = new Uint8Array(chunk.length + 1)
 
-    resp[0] = PeerFileSend.HEADER_FILE_CHUNK
+    resp[0] = ControlHeaders.FILE_CHUNK
     resp.set(chunk, 1)
 
     return resp
   }
 
   // Structure for end data
-  // 1st byte -> Data type header (HEADER_FILE_END)
+  // 1st byte -> Data type header (ControlHeaders.FILE_END)
   private prepareFileEndData (): Uint8Array {
     const resp = new Uint8Array(1)
 
-    resp[0] = PeerFileSend.HEADER_FILE_END
+    resp[0] = ControlHeaders.FILE_END
 
     return resp
   }
 
   // Structure for delete data
-  // 1st byte -> Data type header (HEADER_SEND_CANCEL)
+  // 1st byte -> Data type header (ControlHeaders.TRANSFER_CANCEL)
   private prepareCancelData (): Uint8Array {
     const resp = new Uint8Array(1)
 
-    resp[0] = PeerFileSend.HEADER_SEND_CANCEL
+    resp[0] = ControlHeaders.TRANSFER_CANCEL
 
     return resp
   }
@@ -105,7 +98,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
   start () {
     // Listen for cancel requests
     this.peer.on('data', (data: Uint8Array) => {
-      if (data[0] === PeerFileReceive.HEADER_REC_CANCEL) {
+      if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
         this.cancelled = true
         this.peer.destroy()
 

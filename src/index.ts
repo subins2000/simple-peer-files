@@ -115,6 +115,7 @@ export default class PeerFile {
         pfs.on('done', () => {
           controlChannel.off('data', controlDataHandler)
           fileChannel.destroy()
+          delete this.arrivals[fileID]
           controlDataHandler = null // garbage collect
         })
 
