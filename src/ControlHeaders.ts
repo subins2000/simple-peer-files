@@ -6,7 +6,8 @@ const headers = {
   FILE_END: 2,
 
   TRANSFER_PAUSE: 3,
-  TRANSFER_CANCEL: 4
+  TRANSFER_RESUME: 4,
+  TRANSFER_CANCEL: 5
 }
 
 export default headers

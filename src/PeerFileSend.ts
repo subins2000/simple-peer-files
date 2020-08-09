@@ -11,6 +11,19 @@ import * as read from 'filereader-stream'
 interface Events {
   progress(bytesSent: number): void,
   done(): void
+
+  // Called when sender (this) has requested a pause
+  pause(): void
+
+  // Called when receiver has requested a pause
+  paused(): void
+
+  // Called when sender (this) has requested to resume
+  resume(): void
+
+  // Called when receiver has requested to resume
+  resumed(): void
+
   // Called when the sender (this) has requested a cancel
   cancel(): void
 
@@ -21,11 +34,14 @@ interface Events {
 export default class PeerFileSend extends EventEmitter<Events> {
   private peer: SimplePeer.Instance;
   private file: File;
+  
   private chunkSize = Math.pow(2, 13);
   private totalChunks: number;
+  private chunksSent: number = 0;
   private startingChunk: number;
-  private req: FileSendRequest;
-  private cancelled: boolean = false;
+
+  public paused: boolean = false;
+  public cancelled: boolean = false;
 
   constructor (peer: SimplePeer.Instance, file: File, startingChunk: number = 0) {
     super()
@@ -95,19 +111,15 @@ export default class PeerFileSend extends EventEmitter<Events> {
     return resp
   }
 
-  start () {
-    // Listen for cancel requests
-    this.peer.on('data', (data: Uint8Array) => {
-      if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
-        this.cancelled = true
-        this.peer.destroy()
+  setPeer (peer: SimplePeer.Instance) {
+    this.peer = peer
+  }
 
-        this.emit('cancelled')
-      }
-    })
+  // Start sending file to receiver
+  _resume () {
+    this.paused = false
 
     let offset = 0
-    let chunksSent = 0
 
     if (this.startingChunk > 0) {
       // Resume
@@ -115,7 +127,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
       offset = (this.startingChunk - 1) * this.chunkSize
 
       // so number of chunks already sent will be -1
-      chunksSent = this.startingChunk - 1
+      this.chunksSent = this.startingChunk - 1
     } else {
       // Start
       const startHeader = this.prepareFileStartData()
@@ -132,25 +144,69 @@ export default class PeerFileSend extends EventEmitter<Events> {
 
     stream.pipe(through(
       (chunk: any) => {
-      // TODO : Some way to actually stop this function on cancel
-        if (!this.cancelled) {
+        // TODO : Some way to actually stop this function on cancel
+        if (!this.paused && !this.cancelled) {
           this.peer.send(this.prepareChunkData(chunk))
 
-          chunksSent++
+          this.chunksSent++
 
-          this.emit('progress', Math.min(this.file.size, chunksSent * this.chunkSize))
+          this.emit('progress', Math.min(this.file.size, this.chunksSent * this.chunkSize))
         }
       },
       () => {
-        this.peer.send(this.prepareFileEndData())
+        if (!this.paused && !this.cancelled) {
+          this.peer.send(this.prepareFileEndData())
 
-        this.emit('progress', this.file.size)
-        this.emit('done')
+          this.emit('progress', this.file.size)
+          this.emit('done')
 
-        // Destroy peer
-        this.peer.destroy()
+          // Destroy peer
+          this.peer.destroy()
+        }
       }
     ))
+  }
+
+  start () {
+    // Listen for cancel requests
+    this.peer.on('data', (data: Uint8Array) => {
+      if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
+        this._pause()
+        this.emit('paused')
+      } else if (data[0] === ControlHeaders.TRANSFER_RESUME) {
+        this._resume()
+        this.emit('resumed')
+      } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
+        this.cancelled = true
+        this.peer.destroy()
+
+        this.emit('cancelled')
+      }
+    })
+
+    this._resume()
+  }
+
+  _pause () {
+    this.paused = true
+    this.startingChunk = this.chunksSent - 1
+  }
+
+  pause () {
+    this._pause()
+
+    const resp = new Uint8Array(1)
+    resp[0] = ControlHeaders.TRANSFER_PAUSE
+
+    this.peer.send(resp)
+    this.emit('pause')
+  }
+
+  resume () {
+    this.paused = false
+    this.emit('resume')
+
+    this._resume()
   }
 
   cancel () {

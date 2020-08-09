@@ -9,6 +9,15 @@ interface Events {
   progress(bytesCompleted: number): void,
   done(receivedFile: File): void
 
+  // Called when receiver (this) has requested a pause
+  pause(): void
+
+  // Called when sender paused the transfer
+  paused(): void
+
+  // Called when receiver (this) has requested to resume
+  resume(): void
+
   // Called when the receiver (this) calls cancel
   cancel(): void
 
@@ -27,6 +36,8 @@ export default class PeerFileReceive extends EventEmitter<Events> {
 
   public receivedChunkCount!: number;
   private chunkCount!: number;
+
+  public paused: boolean = false;
 
   constructor (peer: SimplePeer.Instance, req: FileSendRequest) {
     super()
@@ -68,6 +79,8 @@ export default class PeerFileReceive extends EventEmitter<Events> {
       // Disconnect from the peer and cleanup
       this.peer.off('data', this.handleData)
       this.peer.destroy()
+    } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
+      this.emit('paused')
     } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
       this.peer.off('data', this.handleData)
       this.peer.destroy()
@@ -78,6 +91,33 @@ export default class PeerFileReceive extends EventEmitter<Events> {
 
   start () {
     this.peer.on('data', this.handleData)
+  }
+
+  _pause () {
+    const resp = new Uint8Array(1)
+    resp[0] = ControlHeaders.TRANSFER_PAUSE
+
+    this.peer.send(resp)
+
+    this.paused = true
+  }
+
+  pause () {
+    this._pause()
+
+    const resp = new Uint8Array(1)
+    resp[0] = ControlHeaders.TRANSFER_PAUSE
+
+    this.peer.send(resp)
+    this.emit('pause')
+  }
+
+  resume () {
+    const resp = new Uint8Array(1)
+    resp[0] = ControlHeaders.TRANSFER_RESUME
+
+    this.peer.send(resp)
+    this.emit('resume')
   }
 
   // Structure for cancel data

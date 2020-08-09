@@ -1,8 +1,6 @@
 import * as Peer from 'simple-peer'
 import PeerFileSend from './PeerFileSend'
 import PeerFileReceive from './PeerFileReceive'
-import { sign } from 'crypto'
-import { start } from 'repl'
 
 export default class PeerFile {
   private arrivals: {
@@ -126,3 +124,5 @@ export default class PeerFile {
     })
   }
 }
+
+export { PeerFileSend, PeerFileReceive }
