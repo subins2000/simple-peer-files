@@ -74,7 +74,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
   // Rest of the bytes will be the chunk data with length the length specified in the chunk size
   private prepareChunkData (chunk: Uint8Array): Uint8Array {
     // + 1 for the header
-    const resp = new Uint8Array(this.chunkSize + 1)
+    const resp = new Uint8Array(chunk.length + 1)
 
     resp[0] = PeerFileSend.HEADER_FILE_CHUNK
     resp.set(chunk, 1)
@@ -130,8 +130,6 @@ export default class PeerFileSend extends EventEmitter<Events> {
       this.peer.send(startHeader)
       this.emit('progress', 0)
     }
-
-    console.log(this.file.size)
 
     // Chunk sending
     const stream = read(this.file, {
