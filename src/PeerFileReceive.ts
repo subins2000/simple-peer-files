@@ -6,7 +6,7 @@ import FileStartMetadata from './FileStartMetadata'
 
 interface Events {
   progress(bytesCompleted: number): void,
-  done(receivedFile: Blob, filename: string): void
+  done(receivedFile: File): void
 
   // Called when the receiver (this) calls cancel
   cancel(): void
@@ -44,7 +44,6 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     if (data[0] === PeerFileSend.HEADER_FILE_START) {
       const meta = JSON.parse(new TextDecoder().decode(data.slice(1))) as FileStartMetadata
 
-      console.log(data)
       this.chunkCount = meta.totalChunks
       this.receivedChunkCount = 0
       this.chunkSizeBytes = meta.chunkSize
@@ -58,8 +57,13 @@ export default class PeerFileReceive extends EventEmitter<Events> {
 
       this.emit('progress', Math.min(this.chunkSizeBytes * this.receivedChunkCount, this.req.filesizeBytes))
     } else if (data[0] === PeerFileSend.HEADER_FILE_END) {
-      console.log(this.receivedData)
-      this.emit('done', new window.Blob(this.receivedData, { type: this.fileType }), this.req.filename)
+      this.emit('done', new window.File(
+        this.receivedData,
+        this.req.filename,
+        {
+          type: this.fileType
+        }
+      ))
 
       // Disconnect from the peer and cleanup
       this.peer.off('data', this.handleData)

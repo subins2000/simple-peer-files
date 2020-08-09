@@ -1,6 +1,6 @@
 import { EventEmitter } from 'ee-ts'
 import SimplePeer from 'simple-peer'
-import through from 'through'
+import { through } from 'through'
 
 import FileSendRequest from './FileSendRequest'
 import FileStartMetadata from './FileStartMetadata'
@@ -123,6 +123,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
     })
 
     let chunksSent = 0
+
     stream.pipe(through(
       (chunk: any) => {
       // TODO : Some way to actually stop this function on cancel
