@@ -2,7 +2,7 @@
 
 A simple library to send & receive files over WebRTC data channels. All you need to pass is a [simple-peer](https://www.npmjs.com/package/simple-peer) object, the file, and an ID!
 
-Thanks to [Andre Bastin](https://github.com/AndrewBastin/justshare-client/tree/master/src/api)'s initial implementation.
+Thanks to [Andrew Bastin](https://github.com/AndrewBastin/justshare-client/tree/master/src/api)'s initial implementation.
 
 ## Features
 
@@ -13,14 +13,38 @@ Thanks to [Andre Bastin](https://github.com/AndrewBastin/justshare-client/tree/m
 
 ## Example
 
+Sender :
 ```
 import PeerFile from 'simple-peer-files'
+const pf = new PeerFile()
 
-// peer is the SimplePeer object
-new PeerFile(peer, 'myFileID', file).then(transfer => {
+function readyToSend () {
+  // peer is the SimplePeer object connection to receiver
+  pf.send(peer, 'myFileID', file).then(transfer => {
+    transfer.on('progress', sentBytes => {
+      console.log(sentBytes)
+    })
+    transfer.start()
+  })
+}
+```
+
+Receiver :
+
+```
+import PeerFile from 'simple-peer-files'
+const pf = new PeerFile()
+
+// peer is the SimplePeer object connection to sender
+pf.receive(peer, 'myFileID').then(transfer => {
   transfer.on('progress', sentBytes => {
     console.log(sentBytes)
   })
   transfer.start()
+
+  // Call readyToSend() in the sender side
+  peer.send('heySenderYouCanSendNow')
 })
 ```
+
+You have to call `transfer.start()` in receiver before you call `transfer.start()` in sender. This to prepare receiver to accept file before sending starts. This also allows the receiver to accept or reject file.
