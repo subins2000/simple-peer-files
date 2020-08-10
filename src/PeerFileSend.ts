@@ -7,7 +7,8 @@ import { ControlHeaders, FileStartMetadata } from './Meta'
 import * as read from 'filereader-stream'
 
 interface Events {
-  progress(bytesSent: number): void,
+  progress(percentage: number, bytesSent: number): void,
+
   done(): void
 
   // Called when sender (this) has requested a pause
@@ -101,7 +102,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
     } else {
       // Start
       this.sendFileStartData()
-      this.emit('progress', 0)
+      this.emit('progress', 0.0, 0)
     }
 
     // Chunk sending
@@ -120,14 +121,16 @@ export default class PeerFileSend extends EventEmitter<Events> {
 
           this.chunksSent++
 
-          this.emit('progress', Math.min(this.file.size, this.chunksSent * this.chunkSize))
+          const bytesSent = Math.min(this.file.size, this.chunksSent * this.chunkSize)
+          const percentage = parseFloat((100 * (bytesSent / this.file.size)).toFixed(3))
+
+          this.emit('progress', percentage, bytesSent)
         }
       },
       () => {
         if (!this.stopSending) {
           this.sendData(ControlHeaders.FILE_END)
 
-          this.emit('progress', this.file.size)
           this.emit('done')
 
           // Destroy peer

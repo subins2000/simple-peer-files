@@ -4,7 +4,8 @@ import SimplePeer from 'simple-peer'
 import { ControlHeaders, FileStartMetadata } from './Meta'
 
 interface Events {
-  progress(bytesCompleted: number): void,
+  progress(percentage: number, bytesSent: number): void,
+
   done(receivedFile: File): void
 
   // Called when receiver (this) has requested a pause
@@ -59,13 +60,16 @@ export default class PeerFileReceive extends EventEmitter<Events> {
       this.fileSize = meta.fileSize
       this.fileType = meta.fileType
 
-      this.emit('progress', 0)
+      this.emit('progress', 0.0, 0)
     } else if (data[0] === ControlHeaders.FILE_CHUNK && !this.paused) {
       this.receivedData.push(data.slice(1))
 
       this.chunksReceived++
 
-      this.emit('progress', Math.min(this.chunkSize * this.chunksReceived, this.fileSize))
+      const bytesReceived = Math.min(this.chunkSize * this.chunksReceived, this.fileSize)
+      const percentage = parseFloat((100 * (bytesReceived / this.fileSize)).toFixed(3))
+
+      this.emit('progress', percentage, bytesReceived)
     } else if (data[0] === ControlHeaders.FILE_END) {
       const file = new window.File(
         this.receivedData,
