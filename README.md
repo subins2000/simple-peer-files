@@ -15,8 +15,8 @@ Thanks to [Andrew Bastin](https://github.com/AndrewBastin/justshare-client/tree/
 
 Sender :
 ```
-import PeerFile from 'simple-peer-files'
-const pf = new PeerFile()
+import SimplePeerFiles from 'simple-peer-files'
+const pf = new SimplePeerFiles()
 
 function readyToSend () {
   // peer is the SimplePeer object connection to receiver
@@ -32,8 +32,8 @@ function readyToSend () {
 Receiver :
 
 ```
-import PeerFile from 'simple-peer-files'
-const pf = new PeerFile()
+import SimplePeerFiles from 'simple-peer-files'
+const pf = new SimplePeerFiles()
 
 // peer is the SimplePeer object connection to sender
 pf.receive(peer, 'myFileID').then(transfer => {

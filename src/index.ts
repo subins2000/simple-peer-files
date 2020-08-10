@@ -9,7 +9,7 @@ import * as Peer from 'simple-peer'
 import PeerFileSend from './PeerFileSend'
 import PeerFileReceive from './PeerFileReceive'
 
-export default class PeerFile {
+export default class SimplePeerFiles {
   private arrivals: {
     [fileID: string]: PeerFileReceive
   } = {}
