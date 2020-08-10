@@ -20,8 +20,6 @@ export default class PeerFile {
       fileChannel.on('signal', (signal: Peer.SignalData) => {
         controlChannel.send(JSON.stringify({
           fileID,
-          fileName: file.name,
-          fileSize: file.size,
           signal
         }))
       })
@@ -44,7 +42,7 @@ export default class PeerFile {
         const pfs = new PeerFileSend(fileChannel, file, startingChunk)
 
         pfs.on('done', () => {
-          controlChannel.off('data', controlDataHandler)
+          controlChannel.removeListener('data', controlDataHandler)
           fileChannel.destroy()
           controlDataHandler = null // garbage collect
         })
@@ -59,9 +57,6 @@ export default class PeerFile {
   receive (peer: Peer, fileID: string) {
     return new Promise(resolve => {
       const controlChannel = peer
-
-      let fileName: string
-      let fileSize: number
 
       const fileChannel = new Peer({
         initiator: false,
@@ -89,8 +84,6 @@ export default class PeerFile {
           const dataJSON = JSON.parse(data)
 
           if (dataJSON.signal && dataJSON.fileID && dataJSON.fileID === fileID) {
-            fileName = dataJSON.fileName
-            fileSize = dataJSON.fileSize
             fileChannel.signal(dataJSON.signal)
           }
         } catch (e) {}
@@ -108,7 +101,7 @@ export default class PeerFile {
         }
 
         pfs.on('done', () => {
-          controlChannel.off('data', controlDataHandler)
+          controlChannel.removeListener('data', controlDataHandler)
           fileChannel.destroy()
           delete this.arrivals[fileID]
           controlDataHandler = null // garbage collect

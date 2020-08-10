@@ -151,7 +151,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
 
         this.receiverPaused = false
         this.startingChunk = chunksReceived + 1
-        
+
         if (!this.paused) {
           this._resume()
           this.emit('resumed')

@@ -77,12 +77,12 @@ export default class PeerFileReceive extends EventEmitter<Events> {
       this.emit('done', file)
 
       // Disconnect from the peer and cleanup
-      this.peer.off('data', this.handleData)
+      this.peer.removeListener('data', this.handleData)
       this.peer.destroy()
     } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
       this.emit('paused')
     } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
-      this.peer.off('data', this.handleData)
+      this.peer.removeListener('data', this.handleData)
       this.peer.destroy()
 
       this.cancelled = true
@@ -130,7 +130,7 @@ export default class PeerFileReceive extends EventEmitter<Events> {
 
   cancel () {
     this.sendData(ControlHeaders.TRANSFER_CANCEL)
-    this.peer.off('data', this.handleData)
+    this.peer.removeListener('data', this.handleData)
     this.peer.destroy()
 
     this.emit('cancel')
