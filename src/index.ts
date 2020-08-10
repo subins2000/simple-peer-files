@@ -1,3 +1,10 @@
+/*!
+ * Simple library to send files over WebRTC
+ *
+ * @author   Subin Siby <https://subinsb.com>
+ * @license  MIT
+ */
+
 import * as Peer from 'simple-peer'
 import PeerFileSend from './PeerFileSend'
 import PeerFileReceive from './PeerFileReceive'
