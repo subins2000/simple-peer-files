@@ -54,11 +54,8 @@ export default class PeerFileSend extends EventEmitter<Events> {
     this.startingChunk = startingChunk
   }
 
-  // Structure of File Start Data
-  // 1st byte -> Type of data sent (will be set to ControlHeaders.FILE_START)
-  // Rest of the data will be assigned to the uint8array merge of JSON string the file metadata
-  // TODO : Much more compressed binary representation plz
-  private prepareFileStartData (): Uint8Array {
+  // Info about file is sent first
+  private sendFileStartData () {
     const meta: FileStartMetadata = {
       fileName: this.file.name,
       fileSize: this.file.size,
@@ -66,52 +63,20 @@ export default class PeerFileSend extends EventEmitter<Events> {
       chunksTotal: this.chunksTotal,
       chunkSize: this.chunkSize
     }
-
     const metaString = JSON.stringify(meta)
-
     const metaByteArray = new TextEncoder().encode(metaString)
 
-    // + 1 for storing the header byte
-    const resp = new Uint8Array(metaByteArray.length + 1)
-
-    // Header byte
-    resp[0] = ControlHeaders.FILE_START
-    resp.set(metaByteArray, 1)
-
-    return resp
+    this.sendData(ControlHeaders.FILE_START, metaByteArray)
   }
 
-  // Structure for chunk data
-  // 1st byte -> Data type header (ControlHeaders.FILE_CHUNK)
-  // Rest of the bytes will be the chunk data with length the length specified in the chunk size
-  private prepareChunkData (chunk: Uint8Array): Uint8Array {
-    // + 1 for the header
-    const resp = new Uint8Array(chunk.length + 1)
+  // 1st byte -> Data type header
+  // Rest of the bytes will be the data to send
+  private sendData (header: number, data: Uint8Array = new Uint8Array()) {
+    const resp = new Uint8Array(1 + data.length)
+    resp[0] = header
+    resp.set(data, 1)
 
-    resp[0] = ControlHeaders.FILE_CHUNK
-    resp.set(chunk, 1)
-
-    return resp
-  }
-
-  // Structure for end data
-  // 1st byte -> Data type header (ControlHeaders.FILE_END)
-  private prepareFileEndData (): Uint8Array {
-    const resp = new Uint8Array(1)
-
-    resp[0] = ControlHeaders.FILE_END
-
-    return resp
-  }
-
-  // Structure for delete data
-  // 1st byte -> Data type header (ControlHeaders.TRANSFER_CANCEL)
-  private prepareCancelData (): Uint8Array {
-    const resp = new Uint8Array(1)
-
-    resp[0] = ControlHeaders.TRANSFER_CANCEL
-
-    return resp
+    this.peer.send(resp)
   }
 
   setPeer (peer: SimplePeer.Instance) {
@@ -135,9 +100,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
       offset = this.chunksSent * this.chunkSize
     } else {
       // Start
-      const startHeader = this.prepareFileStartData()
-
-      this.peer.send(startHeader)
+      this.sendFileStartData()
       this.emit('progress', 0)
     }
 
@@ -149,12 +112,11 @@ export default class PeerFileSend extends EventEmitter<Events> {
 
     const streamHandler = through(
       (chunk: any) => {
-        console.log(this.chunksSent)
         // TODO : Some way to actually stop this function on cancel
         if (this.stopSending) {
           streamHandler.destroy()
         } else {
-          this.peer.send(this.prepareChunkData(chunk))
+          this.sendData(ControlHeaders.FILE_CHUNK, chunk)
 
           this.chunksSent++
 
@@ -163,7 +125,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
       },
       () => {
         if (!this.stopSending) {
-          this.peer.send(this.prepareFileEndData())
+          this.sendData(ControlHeaders.FILE_END)
 
           this.emit('progress', this.file.size)
           this.emit('done')
@@ -215,10 +177,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
     this._pause()
     this.paused = true
 
-    const resp = new Uint8Array(1)
-    resp[0] = ControlHeaders.TRANSFER_PAUSE
-
-    this.peer.send(resp)
+    this.sendData(ControlHeaders.TRANSFER_PAUSE)
     this.emit('pause')
   }
 
@@ -233,7 +192,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
   cancel () {
     this.stopSending = true
     this.cancelled = true
-    this.peer.send(this.prepareCancelData())
+    this.sendData(ControlHeaders.TRANSFER_CANCEL)
     this.emit('cancel')
   }
 }

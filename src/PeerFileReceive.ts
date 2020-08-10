@@ -48,7 +48,6 @@ export default class PeerFileReceive extends EventEmitter<Events> {
   }
 
   private handleData (data: Uint8Array) {
-    console.log(this.chunksReceived)
     if (data[0] === ControlHeaders.FILE_START) {
       const meta = JSON.parse(new TextDecoder().decode(data.slice(1))) as FileStartMetadata
 
@@ -86,6 +85,7 @@ export default class PeerFileReceive extends EventEmitter<Events> {
       this.peer.off('data', this.handleData)
       this.peer.destroy()
 
+      this.cancelled = true
       this.emit('cancelled')
     }
   }
@@ -94,13 +94,17 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     this.peer.on('data', this.handleData)
   }
 
-  // Request to stop sending data
-  _pause () {
-    const resp = new Uint8Array(1)
-    resp[0] = ControlHeaders.TRANSFER_PAUSE
+  private sendData (header: number, data: Uint8Array = new Uint8Array()) {
+    const resp = new Uint8Array(1 + data.length)
+    resp[0] = header
+    resp.set(data, 1)
 
     this.peer.send(resp)
+  }
 
+  // Request to stop sending data
+  _pause () {
+    this.sendData(ControlHeaders.TRANSFER_PAUSE)
     this.paused = true
   }
 
@@ -108,23 +112,13 @@ export default class PeerFileReceive extends EventEmitter<Events> {
   pause () {
     this.paused = true
     this._pause()
-
-    const resp = new Uint8Array(1)
-    resp[0] = ControlHeaders.TRANSFER_PAUSE
-    this.peer.send(resp)
-
     this.emit('pause')
   }
 
   // Request to resume sending data
   _resume () {
     const crByteArray = new TextEncoder().encode(this.chunksReceived.toString())
-
-    const resp = new Uint8Array(crByteArray.length + 1)
-    resp[0] = ControlHeaders.TRANSFER_RESUME
-    resp.set(crByteArray, 1)
-
-    this.peer.send(resp)
+    this.sendData(ControlHeaders.TRANSFER_RESUME, crByteArray)
   }
 
   // Allow data to be acceptable by receiver & request sender to resume
@@ -134,17 +128,8 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     this.emit('resume')
   }
 
-  // Structure for cancel data
-  // 1st byte -> Header for the sent data type (ControlHeaders.TRANSFER_CANCEL)
-  private prepareCancelData (): Uint8Array {
-    const resp = new Uint8Array(1)
-
-    resp[0] = ControlHeaders.TRANSFER_CANCEL
-    return resp
-  }
-
   cancel () {
-    this.peer.send(this.prepareCancelData())
+    this.sendData(ControlHeaders.TRANSFER_CANCEL)
     this.peer.off('data', this.handleData)
     this.peer.destroy()
 
