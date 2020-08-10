@@ -1,9 +1,7 @@
 import { EventEmitter } from 'ee-ts'
 import SimplePeer from 'simple-peer'
 
-import ControlHeaders from './ControlHeaders'
-import FileSendRequest from './FileSendRequest'
-import FileStartMetadata from './FileStartMetadata'
+import { ControlHeaders, FileStartMetadata } from './Meta'
 
 interface Events {
   progress(bytesCompleted: number): void,
@@ -27,49 +25,52 @@ interface Events {
 
 export default class PeerFileReceive extends EventEmitter<Events> {
   private peer: SimplePeer.Instance;
-  private req: FileSendRequest;
+
+  private fileName: string;
+  private fileSize!: number; // File size in bytes
+  private fileType!: string;
 
   private receivedData: any[];
 
-  private fileType!: string;
-  private chunkSizeBytes!: number;
-
-  public receivedChunkCount!: number;
-  private chunkCount!: number;
+  public chunkSize!: number; // Chunk size in bytes
+  public chunksTotal!: number;
+  public chunksReceived: number = 0;
 
   public paused: boolean = false;
+  public cancelled: boolean = false;
 
-  constructor (peer: SimplePeer.Instance, req: FileSendRequest) {
+  constructor (peer: SimplePeer.Instance) {
     super()
 
     this.peer = peer
-    this.req = req
-
     this.receivedData = []
-
     this.handleData = this.handleData.bind(this)
   }
 
   private handleData (data: Uint8Array) {
+    console.log(this.chunksReceived)
     if (data[0] === ControlHeaders.FILE_START) {
       const meta = JSON.parse(new TextDecoder().decode(data.slice(1))) as FileStartMetadata
 
-      this.chunkCount = meta.totalChunks
-      this.receivedChunkCount = 0
-      this.chunkSizeBytes = meta.chunkSize
+      this.chunksTotal = meta.chunksTotal
+      this.chunksReceived = 0
+      this.chunkSize = meta.chunkSize
+
+      this.fileName = meta.fileName
+      this.fileSize = meta.fileSize
       this.fileType = meta.fileType
 
       this.emit('progress', 0)
-    } else if (data[0] === ControlHeaders.FILE_CHUNK) {
+    } else if (data[0] === ControlHeaders.FILE_CHUNK && !this.paused) {
       this.receivedData.push(data.slice(1))
 
-      this.receivedChunkCount++
+      this.chunksReceived++
 
-      this.emit('progress', Math.min(this.chunkSizeBytes * this.receivedChunkCount, this.req.filesizeBytes))
+      this.emit('progress', Math.min(this.chunkSize * this.chunksReceived, this.fileSize))
     } else if (data[0] === ControlHeaders.FILE_END) {
       const file = new window.File(
         this.receivedData,
-        this.req.filename,
+        this.fileName,
         {
           type: this.fileType
         }
@@ -93,6 +94,7 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     this.peer.on('data', this.handleData)
   }
 
+  // Request to stop sending data
   _pause () {
     const resp = new Uint8Array(1)
     resp[0] = ControlHeaders.TRANSFER_PAUSE
@@ -102,21 +104,33 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     this.paused = true
   }
 
+  // Pause receival of data
   pause () {
+    this.paused = true
     this._pause()
 
     const resp = new Uint8Array(1)
     resp[0] = ControlHeaders.TRANSFER_PAUSE
-
     this.peer.send(resp)
+
     this.emit('pause')
   }
 
-  resume () {
-    const resp = new Uint8Array(1)
+  // Request to resume sending data
+  _resume () {
+    const crByteArray = new TextEncoder().encode(this.chunksReceived.toString())
+
+    const resp = new Uint8Array(crByteArray.length + 1)
     resp[0] = ControlHeaders.TRANSFER_RESUME
+    resp.set(crByteArray, 1)
 
     this.peer.send(resp)
+  }
+
+  // Allow data to be acceptable by receiver & request sender to resume
+  resume () {
+    this.paused = false
+    this._resume()
     this.emit('resume')
   }
 

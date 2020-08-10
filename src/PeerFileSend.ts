@@ -2,8 +2,7 @@ import { EventEmitter } from 'ee-ts'
 import SimplePeer from 'simple-peer'
 import { through } from 'through'
 
-import ControlHeaders from './ControlHeaders'
-import FileStartMetadata from './FileStartMetadata'
+import { ControlHeaders, FileStartMetadata } from './Meta'
 
 import * as read from 'filereader-stream'
 
@@ -35,19 +34,22 @@ export default class PeerFileSend extends EventEmitter<Events> {
   private file: File;
 
   private chunkSize = Math.pow(2, 13);
-  private totalChunks: number;
+  private chunksTotal: number;
   private chunksSent: number = 0;
   private startingChunk: number;
 
   public paused: boolean = false;
   public cancelled: boolean = false;
 
+  private receiverPaused: boolean = false; // Does the receiver not want data ?
+  private stopSending: boolean = false;
+
   constructor (peer: SimplePeer.Instance, file: File, startingChunk: number = 0) {
     super()
 
     this.peer = peer
     this.file = file
-    this.totalChunks = Math.ceil(this.file.size / this.chunkSize)
+    this.chunksTotal = Math.ceil(this.file.size / this.chunkSize)
 
     this.startingChunk = startingChunk
   }
@@ -58,8 +60,10 @@ export default class PeerFileSend extends EventEmitter<Events> {
   // TODO : Much more compressed binary representation plz
   private prepareFileStartData (): Uint8Array {
     const meta: FileStartMetadata = {
-      totalChunks: this.totalChunks,
+      fileName: this.file.name,
+      fileSize: this.file.size,
       fileType: this.file.type,
+      chunksTotal: this.chunksTotal,
       chunkSize: this.chunkSize
     }
 
@@ -116,17 +120,19 @@ export default class PeerFileSend extends EventEmitter<Events> {
 
   // Start sending file to receiver
   _resume () {
-    this.paused = false
+    if (this.receiverPaused) return
 
+    this.stopSending = false
     let offset = 0
 
     if (this.startingChunk > 0) {
       // Resume
-      // starting chunk number is the next chunk needd
-      offset = (this.startingChunk - 1) * this.chunkSize
 
-      // so number of chunks already sent will be -1
+      // starting chunk number is the next chunk needed to send
+      // number of chunks already sent will be -1
       this.chunksSent = this.startingChunk - 1
+
+      offset = this.chunksSent * this.chunkSize
     } else {
       // Start
       const startHeader = this.prepareFileStartData()
@@ -141,10 +147,13 @@ export default class PeerFileSend extends EventEmitter<Events> {
       offset
     })
 
-    stream.pipe(through(
+    const streamHandler = through(
       (chunk: any) => {
+        console.log(this.chunksSent)
         // TODO : Some way to actually stop this function on cancel
-        if (!this.paused && !this.cancelled) {
+        if (this.stopSending) {
+          streamHandler.destroy()
+        } else {
           this.peer.send(this.prepareChunkData(chunk))
 
           this.chunksSent++
@@ -153,7 +162,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
         }
       },
       () => {
-        if (!this.paused && !this.cancelled) {
+        if (!this.stopSending) {
           this.peer.send(this.prepareFileEndData())
 
           this.emit('progress', this.file.size)
@@ -163,18 +172,28 @@ export default class PeerFileSend extends EventEmitter<Events> {
           this.peer.destroy()
         }
       }
-    ))
+    )
+
+    stream.pipe(streamHandler)
   }
 
   start () {
     // Listen for cancel requests
     this.peer.on('data', (data: Uint8Array) => {
       if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
+        this.receiverPaused = true
         this._pause()
         this.emit('paused')
       } else if (data[0] === ControlHeaders.TRANSFER_RESUME) {
-        this._resume()
-        this.emit('resumed')
+        const chunksReceived = parseInt(new TextDecoder().decode(data.slice(1)))
+
+        this.receiverPaused = false
+        this.startingChunk = chunksReceived + 1
+        
+        if (!this.paused) {
+          this._resume()
+          this.emit('resumed')
+        }
       } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
         this.cancelled = true
         this.peer.destroy()
@@ -187,12 +206,14 @@ export default class PeerFileSend extends EventEmitter<Events> {
   }
 
   _pause () {
-    this.paused = true
-    this.startingChunk = this.chunksSent - 1
+    this.stopSending = true
+    this.startingChunk = this.chunksSent + 1
   }
 
+  // Stop sending data now & future sending
   pause () {
     this._pause()
+    this.paused = true
 
     const resp = new Uint8Array(1)
     resp[0] = ControlHeaders.TRANSFER_PAUSE
@@ -201,6 +222,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
     this.emit('pause')
   }
 
+  // Allow data to be sent & start sending data
   resume () {
     this.paused = false
     this.emit('resume')
@@ -209,6 +231,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
   }
 
   cancel () {
+    this.stopSending = true
     this.cancelled = true
     this.peer.send(this.prepareCancelData())
     this.emit('cancel')

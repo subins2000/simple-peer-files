@@ -20,8 +20,8 @@ export default class PeerFile {
       fileChannel.on('signal', (signal: Peer.SignalData) => {
         controlChannel.send(JSON.stringify({
           fileID,
-          filename: file.name,
-          filesize: file.size,
+          fileName: file.name,
+          fileSize: file.size,
           signal
         }))
       })
@@ -60,8 +60,8 @@ export default class PeerFile {
     return new Promise(resolve => {
       const controlChannel = peer
 
-      let filename: string
-      let filesize: number
+      let fileName: string
+      let fileSize: number
 
       const fileChannel = new Peer({
         initiator: false,
@@ -74,7 +74,7 @@ export default class PeerFile {
 
         // File resume capability
         if (fileID in this.arrivals) {
-          start = this.arrivals[fileID].receivedChunkCount + 1
+          start = this.arrivals[fileID].chunksReceived + 1
         }
 
         controlChannel.send(JSON.stringify({
@@ -89,8 +89,8 @@ export default class PeerFile {
           const dataJSON = JSON.parse(data)
 
           if (dataJSON.signal && dataJSON.fileID && dataJSON.fileID === fileID) {
-            filename = dataJSON.filename
-            filesize = dataJSON.filesize
+            fileName = dataJSON.fileName
+            fileSize = dataJSON.fileSize
             fileChannel.signal(dataJSON.signal)
           }
         } catch (e) {}
@@ -103,10 +103,7 @@ export default class PeerFile {
           pfs = this.arrivals[fileID]
           pfs.setPeer(fileChannel)
         } else {
-          pfs = new PeerFileReceive(fileChannel, {
-            filename,
-            filesizeBytes: filesize
-          })
+          pfs = new PeerFileReceive(fileChannel)
           this.arrivals[fileID] = pfs
         }
 
