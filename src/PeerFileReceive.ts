@@ -46,6 +46,8 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     this.peer = peer
     this.receivedData = []
     this.handleData = this.handleData.bind(this)
+
+    this.peer.on('data', this.handleData)
   }
 
   private handleData (data: Uint8Array) {
@@ -92,10 +94,6 @@ export default class PeerFileReceive extends EventEmitter<Events> {
       this.cancelled = true
       this.emit('cancelled')
     }
-  }
-
-  start () {
-    this.peer.on('data', this.handleData)
   }
 
   private sendData (header: number, data: Uint8Array = new Uint8Array()) {

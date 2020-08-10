@@ -75,7 +75,6 @@ test('one cat pic from peer1', async function (t) {
 
       t.equal(md5(fileContents), md5(catContents))
     })
-    receiveTransfer.start()
 
     send.then(transfer => {
       transfer.on('done', (progress, bytes) => {
@@ -124,7 +123,6 @@ test('multiple cat pics from peer1', async function (t) {
 
           if (++receivedFiles === 2) t.end()
         })
-        transfer.start()
       })
     }
 
