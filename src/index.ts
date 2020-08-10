@@ -59,8 +59,7 @@ export default class PeerFile {
       const controlChannel = peer
 
       const fileChannel = new Peer({
-        initiator: false,
-        trickle: false
+        initiator: false
       })
 
       fileChannel.on('signal', (signal: Peer.SignalData) => {

@@ -86,8 +86,6 @@ test('one cat pic from peer1', async function (t) {
 })
 
 test('multiple cat pics from peer1', async function (t) {
-  t.plan(4)
-
   try {
     const pf1 = new PeerFile()
     const pf2 = new PeerFile()
@@ -104,42 +102,43 @@ test('multiple cat pics from peer1', async function (t) {
     const cat1File = new window.File([cat1.data], 'cat1.jpg', { type: 'image/jpeg' })
     const cat2File = new window.File([cat2.data], 'cat2.jpg', { type: 'image/jpeg' })
 
-    const cat1Send = pf1.send(peer2, 'cat1', cat1File)
-    const cat1ReceiveTransfer = await pf2.receive(peer1, 'cat1')
+    let receivedFiles = 0
+    const validateReceive = (receive, sentFile) => {
+      receive.then(transfer => {
+        transfer.on('done', async file => {
+          t.equal(file.size, sentFile.size)
 
-    const cat2Send = pf1.send(peer2, 'cat2', cat2File)
-    const cat2ReceiveTransfer = await pf2.receive(peer1, 'cat2')
+          const fileContents = await readFile(file)
+          const cat1Contents = await readFile(sentFile)
 
-    cat1ReceiveTransfer.on('done', async file => {
-      t.equal(file.size, cat1File.size)
+          t.equal(md5(fileContents), md5(cat1Contents))
 
-      const fileContents = await readFile(file)
-      const cat1Contents = await readFile(cat1File)
+          if (++receivedFiles === 2) t.end()
+        })
+        transfer.start()
+      })
+    }
 
-      t.equal(md5(fileContents), md5(cat1Contents))
+    const cat1Receive = pf2.receive(peer1, 'cat1')
+    const cat2Receive = pf2.receive(peer1, 'cat2')
+
+    validateReceive(cat1Receive, cat1File)
+    validateReceive(cat2Receive, cat2File)
+
+    await sleep(1000)
+
+    const cat1SendTransfer = pf1.send(peer2, 'cat1', cat1File)
+    const cat2SendTransfer = pf1.send(peer2, 'cat2', cat2File)
+
+    cat1SendTransfer.then(transfer => {
+      transfer.start()
+    })
+    cat2SendTransfer.then(transfer => {
+      transfer.start()
     })
 
-    cat2ReceiveTransfer.on('done', async file => {
-      t.equal(file.size, cat2File.size)
-
-      const fileContents = await readFile(file)
-      const cat2Contents = await readFile(cat2File)
-
-      t.equal(md5(fileContents), md5(cat2Contents))
-    })
-
-    cat1Send.then(transfer => transfer.start())
-    cat2Send.then(transfer => transfer.start())
-
-    cat1ReceiveTransfer.start()
-    cat2ReceiveTransfer.start()
-
-    await new Promise((resolve) => {
-      setTimeout(resolve, 3000)
-    })
+    await sleep(5000)
   } catch (err) {
     t.ifError(err)
   }
-
-  await sleep(3000)
 })

@@ -1,17 +1,23 @@
 {
   "name": "simple-peer-files",
   "version": "1.0.0",
-  "description": "Library to transfer files over WebRTC (simple-peer)",
+  "description": "Simple library to easily transfer files over WebRTC (simple-peer)",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "Subin Siby <mail@subinsb.com>",
   "license": "MIT",
+  "keywords": [
+    "p2p",
+    "simple-peer",
+    "peer"
+  ],
   "scripts": {
     "dev": "tsc -w",
     "lint": "standardx src/**/*.ts test/*.js --fix",
     "test": "standardx src/**/*.ts test/*.js && airtap --local test/*.js"
   },
   "dependencies": {
+    "ee-ts": "^1.0.2",
     "filereader-stream": "^2.0.0",
     "simple-peer": "^9.7.2",
     "through": "^2.3.8"
@@ -22,7 +28,6 @@
     "@typescript-eslint/parser": "^3.8.0",
     "airtap": "^3.0.0",
     "axios": "^0.19.2",
-    "ee-ts": "^1.0.2",
     "md5": "^2.3.0",
     "standardx": "^5.0.0",
     "tape": "^5.0.1",
