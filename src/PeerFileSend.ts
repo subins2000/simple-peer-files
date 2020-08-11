@@ -80,11 +80,6 @@ class SendStream extends Duplex {
 
     cb(null) // Signal that we're ready for more data
   }
-
-  _final () {
-    this.push(pMsg(ControlHeaders.FILE_END))
-    this.emit('progress', 100.0, this.fileSize)
-  }
 }
 
 export default class PeerFileSend extends EventEmitter<Events> {
@@ -149,16 +144,14 @@ export default class PeerFileSend extends EventEmitter<Events> {
 
     this.ss = new SendStream(this.file.size, this.offset)
     stream.pipe(this.ss).pipe(this.peer)
-
-    this.ss.once('done', () => {
-      this.emit('done')
-    })
   }
 
   start () {
     // Listen for cancel requests
     this.peer.on('data', (data: Uint8Array) => {
-      if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
+      if (data[0] === ControlHeaders.FILE_END) {
+        this.emit('done')
+      } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
         this._pause()
 
         this.receiverPaused = true
@@ -201,8 +194,6 @@ export default class PeerFileSend extends EventEmitter<Events> {
     this.paused = false
     this._resume()
     this.emit('resume')
-
-    return this
   }
 
   cancel () {

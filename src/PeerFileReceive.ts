@@ -38,8 +38,6 @@ class ReceiveStream extends Writable {
       this.emit('start', meta)
     } else if (data[0] === ControlHeaders.FILE_CHUNK) {
       this.emit('chunk', data.slice(1))
-    } else if (data[0] === ControlHeaders.FILE_END) {
-      this.emit('end')
     } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
       this.emit('paused')
     } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
@@ -99,6 +97,8 @@ export default class PeerFileReceive extends EventEmitter<Events> {
 
   cancel () {
     this.sendData(ControlHeaders.TRANSFER_CANCEL)
+
+    this.rs.destroy()
     this.peer.destroy()
 
     this.emit('cancel')
@@ -124,19 +124,24 @@ export default class PeerFileReceive extends EventEmitter<Events> {
       this.receivedData.push(chunk)
       this.bytesReceived += chunk.byteLength
 
-      const percentage = parseFloat((100 * (this.bytesReceived / this.fileSize)).toFixed(3))
+      if (this.bytesReceived === this.fileSize) {
+        // completed
+        this.sendData(ControlHeaders.FILE_END)
 
-      this.emit('progress', percentage, this.bytesReceived)
-    })
-    this.rs.on('end', () => {
-      const file = new window.File(
-        this.receivedData,
-        this.fileName,
-        {
-          type: this.fileType
-        }
-      )
-      this.emit('done', file)
+        const file = new window.File(
+          this.receivedData,
+          this.fileName,
+          {
+            type: this.fileType
+          }
+        )
+
+        this.emit('done', file)
+      } else {
+        const percentage = parseFloat((100 * (this.bytesReceived / this.fileSize)).toFixed(3))
+
+        this.emit('progress', percentage, this.bytesReceived)
+      }
     })
     this.rs.on('paused', () => {
       this.emit('paused')
