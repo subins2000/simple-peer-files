@@ -118,6 +118,16 @@ export default class PeerFileSend extends EventEmitter<Events> {
     this.offset = offset
   }
 
+  /**
+   * Send a message to receiver
+   * @param header Type of message
+   * @param data   Message
+   */
+  private sendPeer (header: number, data: Uint8Array = null) {
+    if (!this.peer.connected) return
+    this.peer.send(pMsg(header, data))
+  }
+
   // Info about file is sent first
   private sendFileStartData () {
     const meta: FileStartMetadata = {
@@ -128,7 +138,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
     const metaString = JSON.stringify(meta)
     const metaByteArray = new TextEncoder().encode(metaString)
 
-    this.peer.send(pMsg(ControlHeaders.FILE_START, metaByteArray))
+    this.sendPeer(ControlHeaders.FILE_START, metaByteArray)
   }
 
   setPeer (peer: SimplePeer.Instance) {
@@ -199,7 +209,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
     this._pause()
     this.paused = true
 
-    this.peer.send(pMsg(ControlHeaders.TRANSFER_PAUSE))
+    this.sendPeer(ControlHeaders.TRANSFER_PAUSE)
     this.emit('pause')
   }
 
@@ -213,7 +223,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
   cancel () {
     this.cancelled = true
     this.ss.destroy()
-    this.peer.send(pMsg(ControlHeaders.TRANSFER_CANCEL))
+    this.sendPeer(ControlHeaders.TRANSFER_CANCEL)
     this.peer.destroy()
     this.emit('cancel')
   }

@@ -68,7 +68,14 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     this.setPeer(peer)
   }
 
-  private sendData (header: number, data: Uint8Array = null) {
+  /**
+   * Send a message to sender
+   * @param header Type of message
+   * @param data   Message
+   */
+  private sendPeer (header: number, data: Uint8Array = null) {
+    if (!this.peer.connected) return
+
     let resp: Uint8Array
     if (data) {
       resp = new Uint8Array(1 + data.length)
@@ -83,20 +90,20 @@ export default class PeerFileReceive extends EventEmitter<Events> {
 
   // Request sender to pause transfer
   pause () {
-    this.sendData(ControlHeaders.TRANSFER_PAUSE)
+    this.sendPeer(ControlHeaders.TRANSFER_PAUSE)
     this.paused = true
     this.emit('pause')
   }
 
   // Request sender to resume sending file
   resume () {
-    this.sendData(ControlHeaders.TRANSFER_RESUME)
+    this.sendPeer(ControlHeaders.TRANSFER_RESUME)
     this.paused = false
     this.emit('resume')
   }
 
   cancel () {
-    this.sendData(ControlHeaders.TRANSFER_CANCEL)
+    this.sendPeer(ControlHeaders.TRANSFER_CANCEL)
 
     this.rs.destroy()
     this.peer.destroy()
@@ -126,7 +133,7 @@ export default class PeerFileReceive extends EventEmitter<Events> {
 
       if (this.bytesReceived === this.fileSize) {
         // completed
-        this.sendData(ControlHeaders.FILE_END)
+        this.sendPeer(ControlHeaders.FILE_END)
 
         const file = new window.File(
           this.receivedData,
