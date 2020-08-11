@@ -1,11 +1,11 @@
 {
   "name": "simple-peer-files",
-  "version": "1.1.0",
-  "description": "Simple library to easily transfer files over WebRTC (simple-peer)",
+  "version": "1.2.0",
+  "description": "Simple library to easily transfer files over WebRTC (simple-peer). Allows resuming of files after interrupted transfer.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "author": "Subin Siby <mail@subinsb.com>",
-  "license": "MIT",
+  "license": "MPL-2.0",
   "keywords": [
     "p2p",
     "simple-peer",
