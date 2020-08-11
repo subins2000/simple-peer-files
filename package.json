@@ -19,11 +19,13 @@
   "dependencies": {
     "ee-ts": "^1.0.2",
     "filereader-stream": "^2.0.0",
+    "readable-stream": "^3.6.0",
     "simple-peer": "^9.7.2",
     "through": "^2.3.8"
   },
   "devDependencies": {
     "@types/node": "^14.0.27",
+    "@types/readable-stream": "^2.3.9",
     "@typescript-eslint/eslint-plugin": "^3.8.0",
     "@typescript-eslint/parser": "^3.8.0",
     "airtap": "^3.0.0",

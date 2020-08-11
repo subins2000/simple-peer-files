@@ -1,3 +1,4 @@
+import { Duplex } from 'readable-stream'
 import { EventEmitter } from 'ee-ts'
 import SimplePeer from 'simple-peer'
 
@@ -24,33 +25,28 @@ interface Events {
   cancelled(): void
 }
 
-export default class PeerFileReceive extends EventEmitter<Events> {
-  private peer: SimplePeer.Instance;
+export default class PeerFileReceive extends Duplex {
+  public paused: boolean = false;
+  public cancelled: boolean = false;
 
+  private peer: SimplePeer.Instance;
   private fileName: string;
   private fileSize!: number; // File size in bytes
   private fileType!: string;
 
   private receivedData: any[];
 
-  public chunkSize!: number; // Chunk size in bytes
-  public chunksTotal!: number;
-  public chunksReceived: number = 0;
-
-  public paused: boolean = false;
-  public cancelled: boolean = false;
-
   constructor (peer: SimplePeer.Instance) {
     super()
 
     this.peer = peer
     this.receivedData = []
-    this.handleData = this.handleData.bind(this)
 
-    this.peer.on('data', this.handleData)
+    // this.peer.on('data', this.handleData)
+    peer.pipe(this)
   }
 
-  private handleData (data: Uint8Array) {
+  _write (data: Uint8Array, encoding: string, cb: Function) {
     if (data[0] === ControlHeaders.FILE_START) {
       const meta = JSON.parse(new TextDecoder().decode(data.slice(1))) as FileStartMetadata
 
@@ -81,28 +77,38 @@ export default class PeerFileReceive extends EventEmitter<Events> {
         }
       )
       this.emit('done', file)
-
-      // Disconnect from the peer and cleanup
-      this.peer.removeListener('data', this.handleData)
-      this.peer.destroy()
     } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
       this.emit('paused')
     } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
-      this.peer.removeListener('data', this.handleData)
       this.peer.destroy()
 
       this.cancelled = true
       this.emit('cancelled')
     }
+
+    if (!this.paused) {
+      cb(null) // Signal that we're ready for more data
+    }
   }
 
-  private sendData (header: number, data: Uint8Array = new Uint8Array()) {
-    const resp = new Uint8Array(1 + data.length)
+  private sendData (header: number, data: Uint8Array = null) {
+    let resp: Uint8Array
+    if (data) {
+      resp = new Uint8Array(1 + data.length)
+      resp.set(data, 1)
+    } else {
+      resp = new Uint8Array(1)
+    }
     resp[0] = header
-    resp.set(data, 1)
 
     this.peer.send(resp)
   }
+
+  _onMessage (buffer) {
+    console.log(buffer)
+  }
+
+  _read (buf) {}
 
   // Request to stop sending data
   _pause () {
@@ -110,29 +116,28 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     this.paused = true
   }
 
-  // Pause receival of data
-  pause () {
-    this.paused = true
-    this._pause()
-    this.emit('pause')
-  }
+  // // Pause receival of data
+  // pause () {
+  //   this.paused = true
+  //   this._pause()
+  //   this.emit('pause')
+  // }
 
-  // Request to resume sending data
-  _resume () {
-    const crByteArray = new TextEncoder().encode(this.chunksReceived.toString())
-    this.sendData(ControlHeaders.TRANSFER_RESUME, crByteArray)
-  }
+  // // Request to resume sending data
+  // _resume () {
+  //   const crByteArray = new TextEncoder().encode(this.chunksReceived.toString())
+  //   this.sendData(ControlHeaders.TRANSFER_RESUME, crByteArray)
+  // }
 
-  // Allow data to be acceptable by receiver & request sender to resume
-  resume () {
-    this.paused = false
-    this._resume()
-    this.emit('resume')
-  }
+  // // Allow data to be acceptable by receiver & request sender to resume
+  // resume () {
+  //   this.paused = false
+  //   this._resume()
+  //   this.emit('resume')
+  // }
 
   cancel () {
     this.sendData(ControlHeaders.TRANSFER_CANCEL)
-    this.peer.removeListener('data', this.handleData)
     this.peer.destroy()
 
     this.emit('cancel')
