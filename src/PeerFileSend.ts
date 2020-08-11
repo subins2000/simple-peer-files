@@ -81,7 +81,7 @@ class SendStream extends Duplex {
     this.bytesSent += chunk.byteLength
     const percentage = parseFloat((100 * (this.bytesSent / this.fileSize)).toFixed(3))
     this.emit('progress', percentage, this.bytesSent)
-    
+
     if (availableForMore) {
       this.cb = null
       cb(null) // Signal that we're ready for more data

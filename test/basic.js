@@ -42,7 +42,7 @@ function readFile (file) {
 
 test('one cat pic from peer1', async function (t) {
   // Number of assertions expected
-  t.plan(6)
+  t.plan(7)
 
   try {
     const pf1 = new PeerFile()
@@ -60,7 +60,7 @@ test('one cat pic from peer1', async function (t) {
     const send = pf1.send(peer2, 'fileID1', catFile)
     const receiveTransfer = await pf2.receive(peer1, 'fileID1')
 
-    receiveTransfer.on('progress', (progress, bytes) => {
+    receiveTransfer.on('progress', progress => {
       t.ok(progress, 'Progress emits')
     })
     receiveTransfer.on('done', async file => {
