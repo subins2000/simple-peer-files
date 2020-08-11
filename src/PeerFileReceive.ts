@@ -1,3 +1,4 @@
+import { Writable } from 'readable-stream'
 import { EventEmitter } from 'ee-ts'
 import SimplePeer from 'simple-peer'
 
@@ -24,121 +25,137 @@ interface Events {
   cancelled(): void
 }
 
+class ReceiveStream extends Writable {
+  /**
+   * File stream writes here
+   * @param chunk
+   * @param encoding
+   * @param cb
+   */
+  _write (data: Uint8Array, encoding: string, cb: Function) {
+    if (data[0] === ControlHeaders.FILE_START) {
+      const meta = JSON.parse(new TextDecoder().decode(data.slice(1))) as FileStartMetadata
+      this.emit('start', meta)
+    } else if (data[0] === ControlHeaders.FILE_CHUNK) {
+      this.emit('chunk', data.slice(1))
+    } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
+      this.emit('paused')
+    } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
+      this.emit('cancelled')
+      this.destroy()
+    }
+
+    cb(null) // Signal that we're ready for more data
+  }
+}
+
 export default class PeerFileReceive extends EventEmitter<Events> {
+  public paused: boolean = false;
+  public cancelled: boolean = false;
+  public bytesReceived: number = 0;
+
   private peer: SimplePeer.Instance;
+  private rs: ReceiveStream;
 
   private fileName: string;
   private fileSize!: number; // File size in bytes
   private fileType!: string;
-
-  private receivedData: any[];
-
-  public chunkSize!: number; // Chunk size in bytes
-  public chunksTotal!: number;
-  public chunksReceived: number = 0;
-
-  public paused: boolean = false;
-  public cancelled: boolean = false;
+  private receivedData: Uint8Array[] = [];
 
   constructor (peer: SimplePeer.Instance) {
     super()
 
-    this.peer = peer
-    this.receivedData = []
-    this.handleData = this.handleData.bind(this)
-
-    this.peer.on('data', this.handleData)
+    this.setPeer(peer)
   }
 
-  private handleData (data: Uint8Array) {
-    if (data[0] === ControlHeaders.FILE_START) {
-      const meta = JSON.parse(new TextDecoder().decode(data.slice(1))) as FileStartMetadata
+  /**
+   * Send a message to sender
+   * @param header Type of message
+   * @param data   Message
+   */
+  private sendPeer (header: number, data: Uint8Array = null) {
+    if (!this.peer.connected) return
 
-      this.chunksTotal = meta.chunksTotal
-      this.chunksReceived = 0
-      this.chunkSize = meta.chunkSize
-
-      this.fileName = meta.fileName
-      this.fileSize = meta.fileSize
-      this.fileType = meta.fileType
-
-      this.emit('progress', 0.0, 0)
-    } else if (data[0] === ControlHeaders.FILE_CHUNK && !this.paused) {
-      this.receivedData.push(data.slice(1))
-
-      this.chunksReceived++
-
-      const bytesReceived = Math.min(this.chunkSize * this.chunksReceived, this.fileSize)
-      const percentage = parseFloat((100 * (bytesReceived / this.fileSize)).toFixed(3))
-
-      this.emit('progress', percentage, bytesReceived)
-    } else if (data[0] === ControlHeaders.FILE_END) {
-      const file = new window.File(
-        this.receivedData,
-        this.fileName,
-        {
-          type: this.fileType
-        }
-      )
-      this.emit('done', file)
-
-      // Disconnect from the peer and cleanup
-      this.peer.removeListener('data', this.handleData)
-      this.peer.destroy()
-    } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
-      this.emit('paused')
-    } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
-      this.peer.removeListener('data', this.handleData)
-      this.peer.destroy()
-
-      this.cancelled = true
-      this.emit('cancelled')
+    let resp: Uint8Array
+    if (data) {
+      resp = new Uint8Array(1 + data.length)
+      resp.set(data, 1)
+    } else {
+      resp = new Uint8Array(1)
     }
-  }
-
-  private sendData (header: number, data: Uint8Array = new Uint8Array()) {
-    const resp = new Uint8Array(1 + data.length)
     resp[0] = header
-    resp.set(data, 1)
 
     this.peer.send(resp)
   }
 
-  // Request to stop sending data
-  _pause () {
-    this.sendData(ControlHeaders.TRANSFER_PAUSE)
-    this.paused = true
-  }
-
-  // Pause receival of data
+  // Request sender to pause transfer
   pause () {
+    this.sendPeer(ControlHeaders.TRANSFER_PAUSE)
     this.paused = true
-    this._pause()
     this.emit('pause')
   }
 
-  // Request to resume sending data
-  _resume () {
-    const crByteArray = new TextEncoder().encode(this.chunksReceived.toString())
-    this.sendData(ControlHeaders.TRANSFER_RESUME, crByteArray)
-  }
-
-  // Allow data to be acceptable by receiver & request sender to resume
+  // Request sender to resume sending file
   resume () {
+    this.sendPeer(ControlHeaders.TRANSFER_RESUME)
     this.paused = false
-    this._resume()
     this.emit('resume')
   }
 
   cancel () {
-    this.sendData(ControlHeaders.TRANSFER_CANCEL)
-    this.peer.removeListener('data', this.handleData)
+    this.sendPeer(ControlHeaders.TRANSFER_CANCEL)
+
+    this.rs.destroy()
     this.peer.destroy()
 
     this.emit('cancel')
   }
 
+  // When peer is changed, start a new stream handler and assign events
   setPeer (peer: SimplePeer.Instance) {
+    if (this.rs) {
+      this.rs.destroy()
+    }
+
+    this.rs = new ReceiveStream()
     this.peer = peer
+
+    peer.pipe(this.rs)
+
+    this.rs.on('start', meta => {
+      this.fileName = meta.fileName
+      this.fileSize = meta.fileSize
+      this.fileType = meta.fileType
+    })
+    this.rs.on('chunk', chunk => {
+      this.receivedData.push(chunk)
+      this.bytesReceived += chunk.byteLength
+
+      if (this.bytesReceived === this.fileSize) {
+        // completed
+        this.sendPeer(ControlHeaders.FILE_END)
+
+        const file = new window.File(
+          this.receivedData,
+          this.fileName,
+          {
+            type: this.fileType
+          }
+        )
+
+        this.emit('progress', 100.0, this.fileSize)
+        this.emit('done', file)
+      } else {
+        const percentage = parseFloat((100 * (this.bytesReceived / this.fileSize)).toFixed(3))
+
+        this.emit('progress', percentage, this.bytesReceived)
+      }
+    })
+    this.rs.on('paused', () => {
+      this.emit('paused')
+    })
+    this.rs.on('cancelled', () => {
+      this.emit('cancelled')
+    })
   }
 }

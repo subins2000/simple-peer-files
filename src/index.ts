@@ -18,7 +18,7 @@ export default class SimplePeerFiles {
     return new Promise(resolve => {
       const controlChannel = peer
 
-      let startingChunk = 0
+      let startingByte = 0
 
       const fileChannel = new Peer({
         initiator: true
@@ -37,7 +37,7 @@ export default class SimplePeerFiles {
 
           if (dataJSON.signal && dataJSON.fileID && dataJSON.fileID === fileID) {
             if (dataJSON.start) {
-              startingChunk = dataJSON.start
+              startingByte = dataJSON.start
             }
 
             fileChannel.signal(dataJSON.signal)
@@ -46,12 +46,16 @@ export default class SimplePeerFiles {
       }
 
       fileChannel.on('connect', () => {
-        const pfs = new PeerFileSend(fileChannel, file, startingChunk)
+        const pfs = new PeerFileSend(fileChannel, file, startingByte)
 
         pfs.on('done', () => {
           controlChannel.removeListener('data', controlDataHandler)
           fileChannel.destroy()
           controlDataHandler = null // garbage collect
+        })
+
+        fileChannel.on('close', () => {
+          pfs.cancel()
         })
 
         resolve(pfs)
@@ -75,7 +79,7 @@ export default class SimplePeerFiles {
 
         // File resume capability
         if (fileID in this.arrivals) {
-          start = this.arrivals[fileID].chunksReceived + 1
+          start = this.arrivals[fileID].bytesReceived
         }
 
         controlChannel.send(JSON.stringify({

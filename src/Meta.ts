@@ -3,11 +3,12 @@
 export const ControlHeaders = {
   FILE_START: 0,
   FILE_CHUNK: 1,
-  FILE_END: 2,
+  FILE_CHUNK_ACK: 2,
+  FILE_END: 3,
 
-  TRANSFER_PAUSE: 3,
-  TRANSFER_RESUME: 4,
-  TRANSFER_CANCEL: 5
+  TRANSFER_PAUSE: 4,
+  TRANSFER_RESUME: 5,
+  TRANSFER_CANCEL: 6
 }
 
 export interface FileSendRequest {
@@ -20,8 +21,5 @@ export interface FileSendRequest {
 export interface FileStartMetadata {
   fileName: string,
   fileSize: number,
-  fileType: string,
-
-  chunkSize: number
-  chunksTotal: number
+  fileType: string
 }
