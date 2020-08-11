@@ -1,4 +1,4 @@
-import { Duplex } from 'readable-stream'
+import { Writable } from 'readable-stream'
 import { EventEmitter } from 'ee-ts'
 import SimplePeer from 'simple-peer'
 
@@ -25,70 +25,49 @@ interface Events {
   cancelled(): void
 }
 
-export default class PeerFileReceive extends Duplex {
+class ReceiveStream extends Writable {
+  /**
+   * File stream writes here
+   * @param chunk
+   * @param encoding
+   * @param cb
+   */
+  _write (data: Uint8Array, encoding: string, cb: Function) {
+    if (data[0] === ControlHeaders.FILE_START) {
+      const meta = JSON.parse(new TextDecoder().decode(data.slice(1))) as FileStartMetadata
+      this.emit('start', meta)
+    } else if (data[0] === ControlHeaders.FILE_CHUNK) {
+      this.emit('chunk', data.slice(1))
+    } else if (data[0] === ControlHeaders.FILE_END) {
+      this.emit('end')
+    } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
+      this.emit('paused')
+    } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
+      this.emit('cancelled')
+      this.destroy()
+    }
+
+    cb(null) // Signal that we're ready for more data
+  }
+}
+
+export default class PeerFileReceive extends EventEmitter<Events> {
   public paused: boolean = false;
   public cancelled: boolean = false;
+  public bytesReceived: number = 0;
 
   private peer: SimplePeer.Instance;
+  private rs: ReceiveStream;
+
   private fileName: string;
   private fileSize!: number; // File size in bytes
   private fileType!: string;
-
-  private receivedData: any[];
+  private receivedData: Uint8Array[] = [];
 
   constructor (peer: SimplePeer.Instance) {
     super()
 
-    this.peer = peer
-    this.receivedData = []
-
-    // this.peer.on('data', this.handleData)
-    peer.pipe(this)
-  }
-
-  _write (data: Uint8Array, encoding: string, cb: Function) {
-    if (data[0] === ControlHeaders.FILE_START) {
-      const meta = JSON.parse(new TextDecoder().decode(data.slice(1))) as FileStartMetadata
-
-      this.chunksTotal = meta.chunksTotal
-      this.chunksReceived = 0
-      this.chunkSize = meta.chunkSize
-
-      this.fileName = meta.fileName
-      this.fileSize = meta.fileSize
-      this.fileType = meta.fileType
-
-      this.emit('progress', 0.0, 0)
-    } else if (data[0] === ControlHeaders.FILE_CHUNK && !this.paused) {
-      this.receivedData.push(data.slice(1))
-
-      this.chunksReceived++
-
-      const bytesReceived = Math.min(this.chunkSize * this.chunksReceived, this.fileSize)
-      const percentage = parseFloat((100 * (bytesReceived / this.fileSize)).toFixed(3))
-
-      this.emit('progress', percentage, bytesReceived)
-    } else if (data[0] === ControlHeaders.FILE_END) {
-      const file = new window.File(
-        this.receivedData,
-        this.fileName,
-        {
-          type: this.fileType
-        }
-      )
-      this.emit('done', file)
-    } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
-      this.emit('paused')
-    } else if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
-      this.peer.destroy()
-
-      this.cancelled = true
-      this.emit('cancelled')
-    }
-
-    if (!this.paused) {
-      cb(null) // Signal that we're ready for more data
-    }
+    this.setPeer(peer)
   }
 
   private sendData (header: number, data: Uint8Array = null) {
@@ -104,37 +83,19 @@ export default class PeerFileReceive extends Duplex {
     this.peer.send(resp)
   }
 
-  _onMessage (buffer) {
-    console.log(buffer)
-  }
-
-  _read (buf) {}
-
-  // Request to stop sending data
-  _pause () {
+  // Request sender to pause transfer
+  pause () {
     this.sendData(ControlHeaders.TRANSFER_PAUSE)
     this.paused = true
+    this.emit('pause')
   }
 
-  // // Pause receival of data
-  // pause () {
-  //   this.paused = true
-  //   this._pause()
-  //   this.emit('pause')
-  // }
-
-  // // Request to resume sending data
-  // _resume () {
-  //   const crByteArray = new TextEncoder().encode(this.chunksReceived.toString())
-  //   this.sendData(ControlHeaders.TRANSFER_RESUME, crByteArray)
-  // }
-
-  // // Allow data to be acceptable by receiver & request sender to resume
-  // resume () {
-  //   this.paused = false
-  //   this._resume()
-  //   this.emit('resume')
-  // }
+  // Request sender to resume sending file
+  resume () {
+    this.sendData(ControlHeaders.TRANSFER_RESUME)
+    this.paused = false
+    this.emit('resume')
+  }
 
   cancel () {
     this.sendData(ControlHeaders.TRANSFER_CANCEL)
@@ -143,7 +104,45 @@ export default class PeerFileReceive extends Duplex {
     this.emit('cancel')
   }
 
+  // When peer is changed, start a new stream handler and assign events
   setPeer (peer: SimplePeer.Instance) {
+    if (this.rs) {
+      this.rs.destroy()
+    }
+
+    this.rs = new ReceiveStream()
     this.peer = peer
+
+    peer.pipe(this.rs)
+
+    this.rs.on('start', meta => {
+      this.fileName = meta.fileName
+      this.fileSize = meta.fileSize
+      this.fileType = meta.fileType
+    })
+    this.rs.on('chunk', chunk => {
+      this.receivedData.push(chunk)
+      this.bytesReceived += chunk.byteLength
+
+      const percentage = parseFloat((100 * (this.bytesReceived / this.fileSize)).toFixed(3))
+
+      this.emit('progress', percentage, this.bytesReceived)
+    })
+    this.rs.on('end', () => {
+      const file = new window.File(
+        this.receivedData,
+        this.fileName,
+        {
+          type: this.fileType
+        }
+      )
+      this.emit('done', file)
+    })
+    this.rs.on('paused', () => {
+      this.emit('paused')
+    })
+    this.rs.on('cancelled', () => {
+      this.emit('cancelled')
+    })
   }
 }

@@ -61,9 +61,7 @@ test('one cat pic from peer1', async function (t) {
     const receiveTransfer = await pf2.receive(peer1, 'fileID1')
 
     receiveTransfer.on('progress', (progress, bytes) => {
-      if (progress === 100.0) {
-        t.equal(bytes, catFile.size)
-      }
+      t.ok(progress, 'Progress emits')
     })
     receiveTransfer.on('done', async file => {
       t.equal(file.name, catFile.name)
@@ -90,6 +88,9 @@ test('one cat pic from peer1', async function (t) {
     t.ifError(err)
   }
 
+  // Tape just recently got async func callback support
+  // This sleep will make sure processes get all completed
+  // See t.pass() value
   await sleep(3000)
 })
 
@@ -132,7 +133,7 @@ test('multiple cat pics from peer1', async function (t) {
     validateReceive(cat1Receive, cat1File)
     validateReceive(cat2Receive, cat2File)
 
-    await sleep(1000)
+    await sleep(100)
 
     const cat1SendTransfer = pf1.send(peer2, 'cat1', cat1File)
     const cat2SendTransfer = pf1.send(peer2, 'cat2', cat2File)

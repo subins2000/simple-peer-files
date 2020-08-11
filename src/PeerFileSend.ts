@@ -1,7 +1,7 @@
+import { EventEmitter } from 'ee-ts'
 import { Duplex } from 'readable-stream'
 import SimplePeer from 'simple-peer'
 import * as read from 'filereader-stream'
-import { through } from 'through'
 
 import { ControlHeaders, FileStartMetadata } from './Meta'
 
@@ -31,14 +31,74 @@ interface Events {
   cancelled(): void
 }
 
-export default class PeerFileSend extends Duplex {
+/**
+ * Make a Uint8Array to send to peer
+ * @param header Type of data. See Meta.ts
+ * @param data
+ */
+function pMsg (header: number, data: Uint8Array = null) {
+  let resp: Uint8Array
+  if (data) {
+    resp = new Uint8Array(1 + data.length)
+    resp.set(data, 1)
+  } else {
+    resp = new Uint8Array(1)
+  }
+  resp[0] = header
+
+  return resp
+}
+
+class SendStream extends Duplex {
+  public bytesSent: number = 0
+  public fileSize: number = 0 // file size
+  public paused: boolean = false
+
+  constructor (fileSize: number, bytesSent = 0) {
+    super()
+    this.fileSize = fileSize
+    this.bytesSent = bytesSent
+  }
+
+  _read () {}
+
+  /**
+   * File stream writes here
+   * @param chunk
+   * @param encoding
+   * @param cb
+   */
+  _write (chunk: Uint8Array, encoding: string, cb: Function) {
+    if (this.paused) return
+
+    this.push(pMsg(ControlHeaders.FILE_CHUNK, chunk))
+
+    const percentage = parseFloat((100 * (this.bytesSent / this.fileSize)).toFixed(3))
+    this.emit('progress', percentage, this.bytesSent)
+
+    this.bytesSent += chunk.length
+
+    cb(null) // Signal that we're ready for more data
+  }
+
+  _final () {
+    this.push(pMsg(ControlHeaders.FILE_END))
+    this.emit('progress', 100.0, this.fileSize)
+  }
+}
+
+export default class PeerFileSend extends EventEmitter<Events> {
   public paused: boolean = false;
   public cancelled: boolean = false;
 
+  private receiverPaused: boolean = false
+
   private peer: SimplePeer.Instance;
+  private ss: SendStream;
+
   private file: File;
 
-  // The number of bytes transferred
+  // Bytes to start sending from
   private offset: number = 0;
 
   /**
@@ -52,8 +112,6 @@ export default class PeerFileSend extends Duplex {
     this.peer = peer
     this.file = file
     this.offset = offset
-
-    this.pipe(peer)
   }
 
   // Info about file is sent first
@@ -66,22 +124,7 @@ export default class PeerFileSend extends Duplex {
     const metaString = JSON.stringify(meta)
     const metaByteArray = new TextEncoder().encode(metaString)
 
-    this.sendData(ControlHeaders.FILE_START, metaByteArray)
-  }
-
-  // 1st byte -> Data type header
-  // Rest of the bytes will be the data to send
-  private sendData (header: number, data: Uint8Array = null) {
-    let resp: Uint8Array
-    if (data) {
-      resp = new Uint8Array(1 + data.length)
-      resp.set(data, 1)
-    } else {
-      resp = new Uint8Array(1)
-    }
-    resp[0] = header
-
-    this.push(resp)
+    this.peer.send(pMsg(ControlHeaders.FILE_START, metaByteArray))
   }
 
   setPeer (peer: SimplePeer.Instance) {
@@ -92,18 +135,7 @@ export default class PeerFileSend extends Duplex {
   _resume () {
     if (this.receiverPaused) return
 
-    this.stopSending = false
-    let offset = 0
-
-    if (this.startingChunk > 0) {
-      // Resume
-
-      // starting chunk number is the next chunk needed to send
-      // number of chunks already sent will be -1
-      this.chunksSent = this.startingChunk - 1
-
-      offset = this.chunksSent * this.chunkSize
-    } else {
+    if (this.offset === 0) {
       // Start
       this.sendFileStartData()
       this.emit('progress', 0.0, 0)
@@ -111,13 +143,14 @@ export default class PeerFileSend extends Duplex {
 
     // Chunk sending
     const stream = read(this.file, {
-      offset
+      offset: this.offset,
+      chunkSize: CHUNK_SIZE
     })
 
-    stream.pipe(this)
-    stream.once('end', () => {
-      this.sendData(ControlHeaders.FILE_END)
-      this.emit('progress', this.file.size)
+    this.ss = new SendStream(this.file.size, this.offset)
+    stream.pipe(this.ss).pipe(this.peer)
+
+    this.ss.once('done', () => {
       this.emit('done')
     })
   }
@@ -125,17 +158,13 @@ export default class PeerFileSend extends Duplex {
   start () {
     // Listen for cancel requests
     this.peer.on('data', (data: Uint8Array) => {
-      if (data[0] === ControlHeaders.FILE_CHUNK_ACK) {
-        this.receiverLastChunk = parseInt(new TextDecoder().decode(data.slice(1)))
-      } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
-        this.receiverPaused = true
+      if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
         this._pause()
+
+        this.receiverPaused = true
         this.emit('paused')
       } else if (data[0] === ControlHeaders.TRANSFER_RESUME) {
-        const chunksReceived = parseInt(new TextDecoder().decode(data.slice(1)))
-
         this.receiverPaused = false
-        this.startingChunk = chunksReceived + 1
 
         if (!this.paused) {
           this._resume()
@@ -152,13 +181,19 @@ export default class PeerFileSend extends Duplex {
     this._resume()
   }
 
+  // Pause transfer and store the bytes sent till now for resuming later
+  _pause () {
+    this.ss.paused = true
+    this.offset = this.ss.bytesSent
+  }
+
   // Stop sending data now & future sending
-  pause (): this {
+  pause () {
+    this._pause()
     this.paused = true
 
-    this.sendData(ControlHeaders.TRANSFER_PAUSE)
+    this.peer.send(pMsg(ControlHeaders.TRANSFER_PAUSE))
     this.emit('pause')
-    return this
   }
 
   // Allow data to be sent & start sending data
@@ -170,34 +205,11 @@ export default class PeerFileSend extends Duplex {
     return this
   }
 
-  _read () {}
-
-  /**
-   * File stream writes here
-   * @param chunk 
-   * @param encoding 
-   * @param cb 
-   */
-  _write (chunk: Uint8Array, encoding: string, cb: Function) {
-    this.sendData(ControlHeaders.FILE_CHUNK, chunk)
-    this.bytesSent += chunk.length
-
-    const percentage = parseFloat((100 * (this.bytesSent / this.file.size)).toFixed(3))
-    this.emit('progress', percentage, this.bytesSent)
-
-    if (!this.paused) {
-      cb(null) // Signal that we're ready for more data
-    }
-  }
-
-  _onMessage (buffer) {
-    console.log(buffer)
-  }
-
   cancel () {
-    this.stopSending = true
     this.cancelled = true
-    this.sendData(ControlHeaders.TRANSFER_CANCEL)
+    this.ss.destroy()
+    this.peer.send(pMsg(ControlHeaders.TRANSFER_CANCEL))
+    this.peer.destroy()
     this.emit('cancel')
   }
 }

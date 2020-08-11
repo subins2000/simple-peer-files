@@ -21,8 +21,5 @@ export interface FileSendRequest {
 export interface FileStartMetadata {
   fileName: string,
   fileSize: number,
-  fileType: string,
-
-  chunkSize: number
-  chunksTotal: number
+  fileType: string
 }
