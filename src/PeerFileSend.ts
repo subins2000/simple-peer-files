@@ -54,13 +54,17 @@ class SendStream extends Duplex {
   public fileSize: number = 0 // file size
   public paused: boolean = false
 
+  private cb: Function
+
   constructor (fileSize: number, bytesSent = 0) {
     super()
     this.fileSize = fileSize
     this.bytesSent = bytesSent
   }
 
-  _read () {}
+  _read () {
+    if (this.cb) this.cb(null)
+  }
 
   /**
    * File stream writes here
@@ -71,14 +75,19 @@ class SendStream extends Duplex {
   _write (chunk: Uint8Array, encoding: string, cb: Function) {
     if (this.paused) return
 
-    this.push(pMsg(ControlHeaders.FILE_CHUNK, chunk))
+    // Will return true if additional chunks of data may continue to be pushed
+    const availableForMore = this.push(pMsg(ControlHeaders.FILE_CHUNK, chunk))
 
+    this.bytesSent += chunk.byteLength
     const percentage = parseFloat((100 * (this.bytesSent / this.fileSize)).toFixed(3))
     this.emit('progress', percentage, this.bytesSent)
-
-    this.bytesSent += chunk.length
-
-    cb(null) // Signal that we're ready for more data
+    
+    if (availableForMore) {
+      this.cb = null
+      cb(null) // Signal that we're ready for more data
+    } else {
+      this.cb = cb
+    }
   }
 }
 
@@ -143,6 +152,10 @@ export default class PeerFileSend extends EventEmitter<Events> {
     })
 
     this.ss = new SendStream(this.file.size, this.offset)
+    this.ss.on('progress', (percentage, bytes) => {
+      this.emit('progress', percentage, bytes)
+    })
+
     stream.pipe(this.ss).pipe(this.peer)
   }
 
@@ -150,6 +163,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
     // Listen for cancel requests
     this.peer.on('data', (data: Uint8Array) => {
       if (data[0] === ControlHeaders.FILE_END) {
+        this.emit('progress', 100.0, this.file.size)
         this.emit('done')
       } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
         this._pause()

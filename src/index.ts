@@ -54,6 +54,10 @@ export default class SimplePeerFiles {
           controlDataHandler = null // garbage collect
         })
 
+        fileChannel.on('close', () => {
+          pfs.cancel()
+        })
+
         resolve(pfs)
       })
 

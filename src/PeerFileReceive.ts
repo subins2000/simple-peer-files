@@ -136,6 +136,7 @@ export default class PeerFileReceive extends EventEmitter<Events> {
           }
         )
 
+        this.emit('progress', 100.0, this.fileSize)
         this.emit('done', file)
       } else {
         const percentage = parseFloat((100 * (this.bytesReceived / this.fileSize)).toFixed(3))
