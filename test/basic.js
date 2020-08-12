@@ -94,7 +94,7 @@ test('one cat pic from peer1', async function (t) {
   await sleep(3000)
 })
 
-test('multiple cat pics from peer1', async function (t) {
+test('multiple cat pics & pause/resume', async function (t) {
   try {
     const pf1 = new PeerFile()
     const pf2 = new PeerFile()
@@ -104,49 +104,142 @@ test('multiple cat pics from peer1', async function (t) {
     // get a file
     const cat1 = await axios.get('/test/cat.jpg', {
       responseType: 'blob'
-    })
+    }) // 90KB
     const cat2 = await axios.get('/test/cat2.jpg', {
       responseType: 'blob'
-    })
+    }) // 26KB
+
     const cat1File = new window.File([cat1.data], 'cat1.jpg', { type: 'image/jpeg' })
     const cat2File = new window.File([cat2.data], 'cat2.jpg', { type: 'image/jpeg' })
 
     let receivedFiles = 0
-    const validateReceive = (receive, sentFile) => {
-      receive.then(transfer => {
-        transfer.on('done', async file => {
-          t.equal(file.size, sentFile.size)
+    const onDone = async (file, sentFile) => {
+      t.equal(file.size, sentFile.size)
 
-          const fileContents = await readFile(file)
-          const cat1Contents = await readFile(sentFile)
+      const fileContents = await readFile(file)
+      const cat1Contents = await readFile(sentFile)
 
-          t.equal(md5(fileContents), md5(cat1Contents))
+      t.equal(md5(fileContents), md5(cat1Contents))
 
-          if (++receivedFiles === 2) t.end()
-        })
-      })
+      if (++receivedFiles === 2) t.end()
     }
 
-    const cat1Receive = pf2.receive(peer1, 'cat1')
-    const cat2Receive = pf2.receive(peer1, 'cat2')
+    // ----
+    // In cat 1, receiver pauses the transfer
+    // ----
 
-    validateReceive(cat1Receive, cat1File)
-    validateReceive(cat2Receive, cat2File)
+    pf2.receive(peer1, 'cat1').then(transfer => {
+      transfer.on('pause', () => {
+        t.pass('pause event emitted at receiver')
+        setTimeout(() => {
+          transfer.resume()
+        }, 500)
+      })
+
+      transfer.on('progress', progress => {
+        if (progress > 10) {
+          transfer.pause()
+        }
+      })
+
+      transfer.on('done', file => {
+        onDone(file, cat1File)
+      })
+    })
+
+    const cat1SendOnTransfer = transfer => {
+      transfer.on('paused', () => t.pass('paused event emitted at sender'))
+      transfer.start()
+    }
+
+    // ----
+    // In cat 2, sender pauses the transfer
+    // ----
+
+    pf2.receive(peer1, 'cat2').then(transfer => {
+      transfer.on('paused', () => {
+        t.pass('paused event emitted at receiver')
+        setTimeout(() => {
+          // Receiver asks to resume transfer
+          peer2.send('resume-please')
+        }, 100)
+      })
+
+      transfer.on('done', file => {
+        onDone(file, cat2File)
+      })
+    })
+
+    const cat2SendOnTransfer = transfer => {
+      transfer.on('progress', progress => {
+        // Cat 2 is a big file, so limit the pause calls
+        if (progress > 50 && progress < 55) {
+          transfer.pause()
+        }
+      })
+
+      // Peer 1 is sender
+      peer1.on('data', data => {
+        if (data.toString() === 'resume-please') {
+          t.pass('request to resume received')
+          transfer.resume()
+        }
+      })
+
+      transfer.start()
+    }
 
     await sleep(100)
 
-    const cat1SendTransfer = pf1.send(peer2, 'cat1', cat1File)
-    const cat2SendTransfer = pf1.send(peer2, 'cat2', cat2File)
-
-    cat1SendTransfer.then(transfer => {
-      transfer.start()
-    })
-    cat2SendTransfer.then(transfer => {
-      transfer.start()
-    })
+    pf1.send(peer2, 'cat1', cat1File).then(cat1SendOnTransfer)
+    pf1.send(peer2, 'cat2', cat2File).then(cat2SendOnTransfer)
 
     await sleep(5000)
   } catch (err) {
     t.ifError(err)
   }
+})
+
+test('cancel events', async function (t) {
+  // Number of assertions expected
+  t.plan(2)
+
+  try {
+    const pf1 = new PeerFile()
+    const pf2 = new PeerFile()
+
+    const [peer1, peer2] = await makePeers()
+
+    // get a file
+    const cat = await axios.get('/test/cat.jpg', {
+      responseType: 'blob'
+    })
+
+    const catFile = new window.File([cat.data], 'cat.jpg', { type: 'image/jpeg' })
+
+    const send = pf1.send(peer2, 'fileID1', catFile)
+    const receiveTransfer = await pf2.receive(peer1, 'fileID1')
+
+    receiveTransfer.on('cancel', () => t.pass('cancel event fired at receiver'))
+
+    receiveTransfer.on('progress', progress => {
+      if (progress > 50) {
+        receiveTransfer.cancel()
+      }
+    })
+
+    send.then(transfer => {
+      transfer.on('cancelled', () => {
+        t.pass('cancelled event fired at sender')
+      })
+      transfer.start()
+    })
+  } catch (err) {
+    t.ifError(err)
+  }
+
+  // Tape just recently got async func callback support
+  // This sleep will make sure processes get all completed
+  // See t.pass() value
+  await sleep(3000)
 })

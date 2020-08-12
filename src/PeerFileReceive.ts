@@ -41,7 +41,7 @@ class ReceiveStream extends Writable {
     } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
       this.emit('paused')
     }
-    
+
     if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
       this.emit('cancelled')
       this.destroy()
