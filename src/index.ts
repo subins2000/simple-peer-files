@@ -2,7 +2,7 @@
  * Simple library to send files over WebRTC
  *
  * @author   Subin Siby <https://subinsb.com>
- * @license  MIT
+ * @license  MPL-2.0
  */
 
 import * as Peer from 'simple-peer'
