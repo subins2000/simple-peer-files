@@ -174,8 +174,11 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     this.cancelled = true
     this.sendPeer(ControlHeaders.TRANSFER_CANCEL)
 
+    this.fileData = []
     this.rs.destroy()
     this.peer.destroy()
+
+    if (this.fileStream) this.fileStream.destroy()
 
     this.emit('cancel')
   }

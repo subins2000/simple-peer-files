@@ -46,13 +46,23 @@ export default class SimplePeerFiles {
       }
 
       fileChannel.on('connect', () => {
-        const pfs = new PeerFileSend(fileChannel, file, startingByte)
+        let pfs = new PeerFileSend(fileChannel, file, startingByte)
 
-        pfs.on('done', () => {
+        let destroyed = false
+        const destroy = () => {
+          if (destroyed) return
+
           controlChannel.removeListener('data', controlDataHandler)
           fileChannel.destroy()
-          controlDataHandler = null // garbage collect
-        })
+
+          // garbage collect
+          controlDataHandler = null
+          pfs = null
+          destroyed = true
+        }
+
+        pfs.on('done', destroy)
+        pfs.on('cancel', destroy)
 
         fileChannel.on('close', () => {
           pfs.cancel()
@@ -110,12 +120,22 @@ export default class SimplePeerFiles {
           this.arrivals[fileID] = pfs
         }
 
-        pfs.on('done', () => {
+        let destroyed = false
+        const destroy = () => {
+          if (destroyed) return
+
           controlChannel.removeListener('data', controlDataHandler)
           fileChannel.destroy()
           delete this.arrivals[fileID]
-          controlDataHandler = null // garbage collect
-        })
+
+          // garbage collect
+          controlDataHandler = null
+          pfs = null
+          destroyed = true
+        }
+
+        pfs.on('done', destroy)
+        pfs.on('cancel', destroy)
 
         resolve(pfs)
       })
