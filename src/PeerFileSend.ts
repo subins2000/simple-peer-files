@@ -94,13 +94,11 @@ class SendStream extends Duplex {
 export default class PeerFileSend extends EventEmitter<Events> {
   public paused: boolean = false;
   public cancelled: boolean = false;
+  public receiverPaused: boolean = false
+  public peer: SimplePeer.Instance;
+  public file: File;
 
-  private receiverPaused: boolean = false
-
-  private peer: SimplePeer.Instance;
   private ss: SendStream;
-
-  private file: File;
 
   // Bytes to start sending from
   private offset: number = 0;

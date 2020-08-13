@@ -56,14 +56,14 @@ export default class PeerFileReceive extends EventEmitter<Events> {
   public cancelled: boolean = false;
   public bytesReceived: number = 0;
 
-  private peer: SimplePeer.Instance;
+  public peer: SimplePeer.Instance;
   private rs: ReceiveStream;
 
-  private fileName: string;
-  private fileSize!: number; // File size in bytes
+  public fileName: string;
+  public fileSize!: number; // File size in bytes
   private fileData = [];
   private fileStream: Readable = null;
-  private fileType!: string;
+  public fileType!: string;
 
   constructor (peer: SimplePeer.Instance) {
     super()
