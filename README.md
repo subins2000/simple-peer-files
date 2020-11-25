@@ -53,3 +53,5 @@ spf.receive(peer, 'myFileID').then(transfer => {
 ```
 
 You have to call `spf.receive()` in receiver before you call `spf.send()` in sender. This is to prepare the receiver to accept file before sending starts. This also allows to implement a functionality for the receiver to accept or reject the file.
+
+Thanks to [Andrew Bastin's justshare](https://github.com/AndrewBastin/justshare-client/tree/master/src/api) for being a reference in making this library.
