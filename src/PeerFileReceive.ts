@@ -18,6 +18,9 @@ interface Events {
   // Called when receiver (this) has requested to resume
   resume(): void
 
+  // Called when sender has requested to resume
+  resumed(): void
+
   // Called when the receiver (this) calls cancel
   cancel(): void
 
@@ -40,6 +43,8 @@ class ReceiveStream extends Writable {
       this.emit('chunk', data.slice(1))
     } else if (data[0] === ControlHeaders.TRANSFER_PAUSE) {
       this.emit('paused')
+    }  else if (data[0] === ControlHeaders.TRANSFER_RESUME) {
+      this.emit('resumed')
     }
 
     if (data[0] === ControlHeaders.TRANSFER_CANCEL) {
@@ -121,6 +126,9 @@ export default class PeerFileReceive extends EventEmitter<Events> {
     })
     this.rs.on('paused', () => {
       this.emit('paused')
+    })
+    this.rs.on('resumed', () => {
+      this.emit('resumed')
     })
     this.rs.on('cancelled', () => {
       this.emit('cancelled')

@@ -213,6 +213,7 @@ export default class PeerFileSend extends EventEmitter<Events> {
 
   // Allow data to be sent & start sending data
   resume () {
+    this.sendPeer(ControlHeaders.TRANSFER_RESUME)
     this.paused = false
     this._resume()
     this.emit('resume')
